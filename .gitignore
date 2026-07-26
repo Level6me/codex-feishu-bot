@@ -38,7 +38,7 @@ hello.py
 # Database and backups
 *.db
 *.bak
-GiteeClient/
+
 *.err
 *.out
 *.txt
