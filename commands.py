@@ -330,24 +330,21 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
                 raise
             
-            # Get hashes for comparison
             local_hash = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
             remote_hash = subprocess.run(["git", "rev-parse", "--short", remote_ref], capture_output=True, text=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
-            
+            relation = subprocess.run(["git", "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}"], capture_output=True, text=True, check=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip().split()
+            ahead, behind = (int(relation[0]), int(relation[1])) if len(relation) == 2 else (0, 0)
             local_version_str = get_version_string("HEAD")
             remote_version_str = get_version_string(remote_ref)
-            
-            if local_hash == remote_hash:
+
+            if ahead and not behind:
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, "ℹ️ 本地代码领先 GitHub 远程仓库，当前没有可拉取的更新；请先将本地提交推送到 origin/main。"))
+            elif behind == 0:
                 no_update_card = CardBuilder.build_no_update_card(local_version_str)
                 await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, no_update_card))
             else:
-                # Get changelog
                 changelog_cmd = ["git", "log", f"{local_hash}..{remote_ref}", "--pretty=format:- %s"]
-                changelog = subprocess.run(changelog_cmd, capture_output=True, text=True, timeout=10, cwd=BASE_DIR).stdout.strip()
-                if not changelog:
-                    changelog = "- 未知更新"
-                
-                # Send update card
+                changelog = subprocess.run(changelog_cmd, capture_output=True, text=True, timeout=10, cwd=BASE_DIR).stdout.strip() or "- 未知更新"
                 update_card = CardBuilder.build_update_card(local_version_str, remote_version_str, changelog)
                 await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, update_card))
                 
@@ -380,12 +377,12 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         
         try:
             # Safe update without losing local uncommitted changes
-            subprocess.run(["git", "stash"], capture_output=True, text=True, check=False, timeout=15, env=custom_env, cwd=BASE_DIR)
-            
+            dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
+            if dirty:
+                raise RuntimeError("本地存在未提交改动，请先提交或清理后再更新")
             subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True, text=True, check=True, timeout=30, env=custom_env, cwd=BASE_DIR)
-            # Install new requirements if any
             pip_cmd = [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
-            subprocess.run(pip_cmd, capture_output=True, text=True, timeout=60, cwd=BASE_DIR)
+            subprocess.run(pip_cmd, capture_output=True, text=True, check=True, timeout=60, cwd=BASE_DIR)
             
             reply_text = "🔄 系统升级就绪，正在触发自启进程，预计 3 秒后重新上线..."
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
