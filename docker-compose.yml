@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  codex-feishu-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codex-feishu-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ${HOME}/.codex:/root/.codex:ro
+    command: python3 main.py
