@@ -75,9 +75,10 @@ async def _process_image_message(loop, message_id, content_json, content_raw):
         output_path = os.path.abspath(output_filename)
         success = await loop.run_in_executor(None, lambda: download_message_resource_sdk(message_id, image_key, "image", output_path))
         
-        return f"请查看这张图片并做出回应。图片路径: {output_path}", os.path.basename(output_filename), success, bot_reply_msg_id
+        image_paths = [output_path] if success else []
+        return f"请查看这张图片并做出回应。图片路径: {output_path}", os.path.basename(output_filename), success, bot_reply_msg_id, image_paths
     else:
-        return "[未获取到图片]", None, True, None
+        return "[未获取到图片]", None, True, None, []
 
 async def _process_post_message(loop, message_id, content_json):
     texts = []
@@ -93,6 +94,7 @@ async def _process_post_message(loop, message_id, content_json):
     bot_reply_msg_id = None
     downloaded_file_name = None
     download_success = True
+    image_paths = []
     
     if image_keys:
         image_key = image_keys[0]
@@ -107,8 +109,10 @@ async def _process_post_message(loop, message_id, content_json):
         
         downloaded_file_name = os.path.basename(output_filename)
         user_text += f"\n[附加图片路径: {output_path}]"
+        if download_success:
+            image_paths.append(output_path)
         
-    return user_text, downloaded_file_name, download_success, bot_reply_msg_id
+    return user_text, downloaded_file_name, download_success, bot_reply_msg_id, image_paths
 
 async def _process_link_message(content_json):
     if isinstance(content_json, dict):
@@ -151,7 +155,6 @@ async def _process_file_audio_media_message(loop, message_id, message_type, cont
         download_success = await loop.run_in_executor(None, lambda: download_message_resource_sdk(message_id, file_key, "file", output_path))
         
         downloaded_file_name = file_name
-        download_success = success
         
         if message_type == "file":
             user_text = f"请详细阅读这份文件（{file_name}），并做出响应。文件路径: {output_path}"
@@ -166,6 +169,7 @@ async def _process_batch_media_message(loop, message_id, content_json):
     items = content_json.get("items", [])
     media_hints = []
     download_success = True
+    image_paths = []
     
     # 批量下发资源加载指示器
     dl_card = CardBuilder.build_download_indicator(f"合并批处理 ({len(items)} 个文件)", "多媒体组")
@@ -197,13 +201,15 @@ async def _process_batch_media_message(loop, message_id, content_json):
             success = await loop.run_in_executor(None, lambda: download_message_resource_sdk(item["message_id"], file_key, "image" if m_type == "image" else "file", output_path))
             if success:
                 media_hints.append(f"{idx+1}. 多模态 {m_type.upper()} 文件路径: `{output_path}`")
+                if m_type == "image":
+                    image_paths.append(output_path)
             else:
                 download_success = False
                 media_hints.append(f"{idx+1}. 多模态 {m_type.upper()} 文件 `{file_name}` (下载失败)")
                 
     user_text = f"请查看以下 {len(items)} 个关联多模态文件并做出综合关联回应：\n\n" + "\n".join(media_hints)
     downloaded_file_name = f"合并批处理 ({len(items)} 个文件)"
-    return user_text, downloaded_file_name, download_success, bot_reply_msg_id
+    return user_text, downloaded_file_name, download_success, bot_reply_msg_id, image_paths
 
 async def _process_single_task(chat_id, task):
     message_id = task["message_id"]
@@ -225,19 +231,20 @@ async def _process_single_task(chat_id, task):
     downloaded_file_name = None
     download_success = True
     bot_reply_msg_id = None
+    image_paths = []
 
     if message_type == "text":
         user_text = raw_text
     elif message_type == "image":
-        user_text, downloaded_file_name, download_success, bot_reply_msg_id = await _process_image_message(loop, message_id, content_json, content_raw)
+        user_text, downloaded_file_name, download_success, bot_reply_msg_id, image_paths = await _process_image_message(loop, message_id, content_json, content_raw)
     elif message_type == "post":
-        user_text, downloaded_file_name, download_success, bot_reply_msg_id = await _process_post_message(loop, message_id, content_json)
+        user_text, downloaded_file_name, download_success, bot_reply_msg_id, image_paths = await _process_post_message(loop, message_id, content_json)
     elif message_type == "link":
         user_text, downloaded_file_name, download_success, bot_reply_msg_id = await _process_link_message(content_json)
     elif message_type in ["file", "audio", "media"]:
         user_text, downloaded_file_name, download_success, bot_reply_msg_id = await _process_file_audio_media_message(loop, message_id, message_type, content_json)
     elif message_type == "batch_media":
-        user_text, downloaded_file_name, download_success, bot_reply_msg_id = await _process_batch_media_message(loop, message_id, content_json)
+        user_text, downloaded_file_name, download_success, bot_reply_msg_id, image_paths = await _process_batch_media_message(loop, message_id, content_json)
     else:
         user_text = f"[暂不支持的消息类型: {message_type}]"
 
@@ -298,7 +305,7 @@ async def _process_single_task(chat_id, task):
     is_error = await execute_agent(
         chat_id, user_text, message_id, bot_reply_msg_id, session_data, 
         is_new_conversation, system_instruction, final_prompt, downloaded_file_name, 
-        download_success, running_processes
+        download_success, running_processes, image_paths=image_paths
     )
     
     if is_error:
@@ -557,10 +564,10 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
         if main_loop and main_loop.is_running():
             async def do_switch():
                 session_data = await get_session_async(chat_id)
-                old_model = session_data.get("model", "Default")
-                session_data["model"] = new_model
+                old_model = session_data.get("codex_model") or "默认 (CLI 配置)"
+                session_data["codex_model"] = "" if "默认" in new_model else new_model
                 await save_session_async(chat_id, session_data)
-                log.info(f"Switched model to {new_model} in chat {chat_id}")
+                log.info(f"Switched codex model to {new_model} in chat {chat_id}")
                 result_card = CardBuilder.build_model_switch_result_card(new_model, old_model)
                 await asyncio.get_running_loop().run_in_executor(None, lambda: patch_interactive_card_sdk(card_message_id, result_card))
             asyncio.run_coroutine_threadsafe(do_switch(), main_loop)

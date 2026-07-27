@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     agent_backend: str = Field(default="codex", alias="AGENT_BACKEND")
     codex_bin: str = Field(default="codex", alias="CODEX_BIN")
     codex_model: str = Field(default="", alias="CODEX_MODEL")
+    codex_models: str = Field(
+        default="gpt-5.1-codex,gpt-5.1-codex-mini,gpt-5.1,gpt-5-codex,gpt-5",
+        alias="CODEX_MODELS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),
@@ -37,6 +41,7 @@ PROFILE_FILE = os.path.join(BASE_DIR, "user_profiles.json")
 AGENT_BACKEND = settings.agent_backend.strip().lower()
 CODEX_BIN = shutil.which(settings.codex_bin) or settings.codex_bin
 CODEX_MODEL = settings.codex_model.strip()
+CODEX_MODELS = [m.strip() for m in settings.codex_models.split(",") if m.strip()]
 BOT_PROCESS_NAME = "codex-feishu-bot"
 
 # --- Versioning Configuration ---

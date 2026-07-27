@@ -106,7 +106,7 @@ from database import get_profile_async, save_profile_async, save_session_async
 from lark_client import send_reply_sdk, send_interactive_card_sdk
 from logger import log
 from card_builder import CardBuilder
-from config import AGENT_BACKEND, CODEX_BIN, BASE_VERSION_PREFIX, VERSION_START_COMMIT, WORKSPACE_ROOT, BASE_DIR, BOT_PROCESS_NAME
+from config import AGENT_BACKEND, CODEX_BIN, CODEX_MODEL, CODEX_MODELS, BASE_VERSION_PREFIX, VERSION_START_COMMIT, WORKSPACE_ROOT, BASE_DIR, BOT_PROCESS_NAME
 
 def get_version_string(commit_ref="HEAD"):
     try:
@@ -161,12 +161,12 @@ def get_system_status_card_data():
         
         git_status = "未知"
         try:
-            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True, timeout=5).strip()
-            commit_info = subprocess.check_output(["git", "log", "-1", "--format=%h - %s (%cr)"], text=True, timeout=5).strip()
+            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True, timeout=5, cwd=BASE_DIR).strip()
+            commit_info = subprocess.check_output(["git", "log", "-1", "--format=%h - %s (%cr)"], text=True, timeout=5, cwd=BASE_DIR).strip()
             
             # try to fetch silently
-            subprocess.run(["git", "fetch"], timeout=3, capture_output=True)
-            status_out = subprocess.check_output(["git", "status", "-sb"], text=True, timeout=5).strip().split('\n')[0]
+            subprocess.run(["git", "fetch"], timeout=3, capture_output=True, cwd=BASE_DIR)
+            status_out = subprocess.check_output(["git", "status", "-sb"], text=True, timeout=5, cwd=BASE_DIR).strip().split('\n')[0]
             
             update_hint = ""
             if "behind" in status_out:
@@ -481,6 +481,13 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, status_card))
         return True, user_text
 
+    elif user_text.strip() in ["/model", "/card", "/menu"]:
+        current_model = session_data.get("codex_model") or CODEX_MODEL or "默认 (CLI 配置)"
+        available = ["默认 (CLI 配置)"] + CODEX_MODELS
+        panel_card = CardBuilder.build_model_panel(available, current_model)
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, panel_card))
+        return True, user_text
+
     elif user_text.strip() == "/quota":
         reply_text = "ℹ️ Codex CLI 当前没有提供可供机器人读取的额度查询接口。"
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
@@ -489,22 +496,6 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
     elif user_text.strip() == "/brain":
         reply_text = "ℹ️ Codex CLI 当前不提供旧版全局记忆看板。可使用 /memory 管理本机器人的持久化偏好。"
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
-        return True, user_text
-
-    elif user_text.strip() == "/test_ss":
-        try:
-            out = subprocess.check_output("/usr/bin/ss -tlnp", shell=True, text=True, timeout=3)
-            await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, {
-                "config": {"wide_screen_mode": True},
-                "header": {"template": "blue", "title": {"content": "SS Output", "tag": "plain_text"}},
-                "elements": [{"tag": "markdown", "content": f"```\n{out[:1000]}\n```"}]
-            }))
-        except Exception as e:
-            await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, {
-                "config": {"wide_screen_mode": True},
-                "header": {"template": "red", "title": {"content": "SS Error", "tag": "plain_text"}},
-                "elements": [{"tag": "markdown", "content": f"```\n{e}\n```"}]
-            }))
         return True, user_text
 
     elif user_text.startswith("/role"):
@@ -566,7 +557,7 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
     elif user_text.startswith("/help"):
         reply_text = """💡 **Codex 机器人高级操作指南**
 
-🔹 `/model` : 查看当前 Codex 模型配置
+🔹 `/model` : 弹出模型切换面板，一键热切换 Codex 模型
 🔹 `/role <设定>` : 让机器人扮演特定角色 (例如: `/role 资深Python工程师`)
 🔹 `/project [路径]` : 管理及切换工作区项目 (不带参发送可视化项目管理器，支持翻页选择与新建；带参直接精准切换至指定路径)
 🔹 `/remember <设定>` : 让机器人永久记住你的偏好 (例如: `/remember 我写代码只用 Python`)
@@ -580,9 +571,12 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
 🔹 `/help` : 显示此帮助菜单
 
 *✨ 隐藏黑科技提示：*
-* **多模态解析**：直接向我发送文档 (PDF/Word)、语音、视频或图片，我能直接阅读、倾听并分析！*
+* **多模态解析**：直接向我发送图片或文档 (PDF/Word/文本)，我能直接阅读分析！语音/视频会以本地文件转交，但 Codex 暂无法直接听看。*
 * **远程终端**：我可以读取你电脑上的文件，甚至直接执行如 `ls -al` 等终端命令！*
 * **全网搜索**：发给我任意网页链接，我可以帮你提取摘要！*"""
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
         return True, user_text
-        
+
+    reply_text = f"❓ 未知指令：`{user_text.split()[0]}`\n发送 `/help` 查看全部可用指令。"
+    await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+    return True, user_text
