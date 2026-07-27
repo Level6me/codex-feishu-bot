@@ -42,6 +42,7 @@ hello.py
 *.err
 *.out
 *.txt
+!requirements.txt
 github_deploy_key*
 
 # Whitelist docs images
