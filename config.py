@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         default="gpt-5.1-codex,gpt-5.1-codex-mini,gpt-5.1,gpt-5-codex,gpt-5",
         alias="CODEX_MODELS",
     )
+    git_mirror_url: str = Field(default="", alias="GIT_MIRROR_URL")
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),
@@ -42,6 +43,7 @@ AGENT_BACKEND = settings.agent_backend.strip().lower()
 CODEX_BIN = shutil.which(settings.codex_bin) or settings.codex_bin
 CODEX_MODEL = settings.codex_model.strip()
 CODEX_MODELS = [m.strip() for m in settings.codex_models.split(",") if m.strip()]
+GIT_MIRROR_URL = settings.git_mirror_url.strip()
 BOT_PROCESS_NAME = "codex-feishu-bot"
 
 # --- Versioning Configuration ---

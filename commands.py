@@ -106,7 +106,7 @@ from database import get_profile_async, save_profile_async, save_session_async
 from lark_client import send_reply_sdk, send_interactive_card_sdk
 from logger import log
 from card_builder import CardBuilder
-from config import AGENT_BACKEND, CODEX_BIN, CODEX_MODEL, CODEX_MODELS, BASE_VERSION_PREFIX, VERSION_START_COMMIT, WORKSPACE_ROOT, BASE_DIR, BOT_PROCESS_NAME
+from config import AGENT_BACKEND, CODEX_BIN, CODEX_MODEL, CODEX_MODELS, GIT_MIRROR_URL, BASE_VERSION_PREFIX, VERSION_START_COMMIT, WORKSPACE_ROOT, BASE_DIR, BOT_PROCESS_NAME
 
 def get_version_string(commit_ref="HEAD"):
     try:
@@ -280,6 +280,7 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
     elif user_text.startswith("/clear"):
         session_data["conversation"] = ""
         session_data["codex_conversation"] = ""
+        session_data["context_usage"] = {}
         await save_session_async(chat_id, session_data)
         reply_text = "🔄 上下文已清空，开启新对话！"
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
@@ -323,12 +324,16 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         custom_env["GIT_ASKPASS"] = "echo"
         
         try:
-            # Use the configured GitHub origin only; never embed credentials in source.
+            # Use the configured GitHub origin; optional env-configured mirror as fallback.
             try:
                 subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, text=True, check=True, timeout=10, env=custom_env, cwd=BASE_DIR)
                 remote_ref = "origin/main"
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-                raise
+                if not GIT_MIRROR_URL:
+                    raise
+                log.warning(f"Fetch from origin failed, trying mirror: {e}")
+                subprocess.run(["git", "fetch", GIT_MIRROR_URL, "main"], capture_output=True, text=True, check=True, timeout=15, env=custom_env, cwd=BASE_DIR)
+                remote_ref = "FETCH_HEAD"
             
             local_hash = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
             remote_hash = subprocess.run(["git", "rev-parse", "--short", remote_ref], capture_output=True, text=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
@@ -380,7 +385,13 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True, timeout=5, env=custom_env, cwd=BASE_DIR).stdout.strip()
             if dirty:
                 raise RuntimeError("本地存在未提交改动，请先提交或清理后再更新")
-            subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True, text=True, check=True, timeout=30, env=custom_env, cwd=BASE_DIR)
+            try:
+                subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True, text=True, check=True, timeout=30, env=custom_env, cwd=BASE_DIR)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+                if not GIT_MIRROR_URL:
+                    raise
+                log.warning(f"Pull from origin failed, trying mirror: {e}")
+                subprocess.run(["git", "pull", "--rebase", GIT_MIRROR_URL, "main"], capture_output=True, text=True, check=True, timeout=30, env=custom_env, cwd=BASE_DIR)
             pip_cmd = [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
             subprocess.run(pip_cmd, capture_output=True, text=True, check=True, timeout=60, cwd=BASE_DIR)
             
@@ -488,14 +499,29 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, panel_card))
         return True, user_text
 
+    elif user_text.strip() == "/context":
+        ctx = session_data.get("context_usage") or {}
+        thread_id = session_data.get("codex_conversation", "")
+        context_card = CardBuilder.build_context_card(ctx, thread_id)
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, context_card))
+        return True, user_text
+
     elif user_text.strip() == "/quota":
         reply_text = "ℹ️ Codex CLI 当前没有提供可供机器人读取的额度查询接口。"
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
         return True, user_text
 
     elif user_text.strip() == "/brain":
-        reply_text = "ℹ️ Codex CLI 当前不提供旧版全局记忆看板。可使用 /memory 管理本机器人的持久化偏好。"
-        await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+        agents_md = os.path.expanduser("~/.codex/AGENTS.md")
+        content = ""
+        if os.path.exists(agents_md):
+            try:
+                with open(agents_md, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+            except Exception as e:
+                content = f"(读取失败: {e})"
+        brain_card = CardBuilder.build_brain_card(content, agents_md)
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, brain_card))
         return True, user_text
 
     elif user_text.startswith("/role"):
@@ -565,9 +591,11 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
 🔹 `/forget` : 清除机器人的长时记忆偏好
 🔹 `/note [内容]` : 添加或管理备忘录 (支持 add/list/del/clear)
 🔹 `/clear` : 清空当前对话的上下文记忆，重新开始
+🔹 `/context` : 查看当前会话的真实 Token 用量看板
+🔹 `/brain` : 查看 Codex 全局记忆（~/.codex/AGENTS.md）
+🔹 `/status` : 查看机器人进程 CPU / 内存 / 运行状态
 🔹 `/stop` : 紧急刹车！强制中止正在后台生成的耗时任务
 🔹 `/update` : 检查并获取云端最新版本的机器人引擎核心
-🔹 `/quota` : Codex CLI 当前不提供额度查询接口
 🔹 `/help` : 显示此帮助菜单
 
 *✨ 隐藏黑科技提示：*
