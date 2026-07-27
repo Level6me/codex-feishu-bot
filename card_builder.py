@@ -995,3 +995,91 @@ class CardBuilder:
             "elements": elements
         }
 
+    @staticmethod
+    def build_context_card(ctx, thread_id="", context_window=400000):
+        elements = []
+        if not ctx or not ctx.get("turns"):
+            elements.append({
+                "tag": "markdown",
+                "content": "*当前会话还没有任何 token 用量记录。发送一条消息后再来查看吧。*"
+            })
+        else:
+            last_input = ctx.get("last_input_tokens", 0)
+            last_cached = ctx.get("last_cached_tokens", 0)
+            last_output = ctx.get("last_output_tokens", 0)
+            pct = min(100.0, round(last_input / context_window * 100, 1)) if context_window else 0
+            filled = int(pct / 5)
+            bar = "█" * filled + "░" * (20 - filled)
+            level = "🟢" if pct < 50 else ("🟡" if pct < 80 else "🔴")
+            elements.append({
+                "tag": "markdown",
+                "content": (
+                    f"📥 **当前上下文占用（最近一轮输入）**\n"
+                    f"`[{bar}]` **{pct}%** {level}\n"
+                    f"`{last_input:,}` / `{context_window:,}` tokens（其中缓存命中 `{last_cached:,}`）\n\n"
+                    f"📤 最近一轮输出：`{last_output:,}` tokens"
+                )
+            })
+            elements.append({"tag": "hr"})
+            elements.append({
+                "tag": "markdown",
+                "content": (
+                    f"📊 **本会话累计**\n"
+                    f"- 对话轮数：`{ctx.get('turns', 0)}`\n"
+                    f"- 累计输入：`{ctx.get('total_input_tokens', 0):,}` tokens\n"
+                    f"- 累计输出：`{ctx.get('total_output_tokens', 0):,}` tokens\n"
+                    f"- 活跃模型：`{ctx.get('model', '默认')}`"
+                )
+            })
+            if thread_id:
+                elements.append({
+                    "tag": "note",
+                    "elements": [{"tag": "plain_text", "content": f"会话线程: {thread_id}"}]
+                })
+        elements.append({"tag": "hr"})
+        elements.append({
+            "tag": "markdown",
+            "content": "💡 使用 `/clear` 可清空上下文并重置统计。"
+        })
+        elements.append(CardBuilder._create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "wathet",
+                "title": {"content": "🧮 上下文 Token 用量看板", "tag": "plain_text"}
+            },
+            "elements": elements
+        }
+
+    @staticmethod
+    def build_brain_card(content, file_path):
+        elements = [
+            {
+                "tag": "markdown",
+                "content": "**🧠 Codex 全局记忆（AGENTS.md）**\n以下内容对本机所有 Codex 会话生效，直接编辑该文件即可修改。"
+            },
+            {
+                "tag": "note",
+                "elements": [{"tag": "plain_text", "content": f"文件: {file_path}"}]
+            },
+            {"tag": "hr"},
+        ]
+        if content:
+            display = content if len(content) <= 3000 else content[:3000] + "\n\n*(内容过长已截断...)*"
+            elements.append({"tag": "markdown", "content": display})
+        else:
+            elements.append({
+                "tag": "markdown",
+                "content": "*全局记忆文件为空或不存在。可让我帮你写入，例如：*\n`把 \"回复始终使用中文\" 写进你的全局记忆 AGENTS.md`"
+            })
+        elements.append({"tag": "hr"})
+        elements.append(CardBuilder._create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "purple",
+                "title": {"content": "🧠 Codex 全局记忆库", "tag": "plain_text"}
+            },
+            "elements": elements
+        }
+

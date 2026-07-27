@@ -100,6 +100,18 @@ async def execute_codex(
                 thread_id = event["thread_id"]
                 session_data["codex_conversation"] = thread_id
                 await save_session_async(chat_id, session_data)
+            if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+                usage = event["usage"]
+                ctx = session_data.get("context_usage") or {}
+                ctx["last_input_tokens"] = usage.get("input_tokens", 0)
+                ctx["last_cached_tokens"] = usage.get("cached_input_tokens", 0)
+                ctx["last_output_tokens"] = usage.get("output_tokens", 0)
+                ctx["total_input_tokens"] = ctx.get("total_input_tokens", 0) + usage.get("input_tokens", 0)
+                ctx["total_output_tokens"] = ctx.get("total_output_tokens", 0) + usage.get("output_tokens", 0)
+                ctx["turns"] = ctx.get("turns", 0) + 1
+                ctx["model"] = model or "默认"
+                session_data["context_usage"] = ctx
+                await save_session_async(chat_id, session_data)
             text = _agent_text(event)
             if text:
                 replies.append(text)
