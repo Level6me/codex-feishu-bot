@@ -891,106 +891,168 @@ class CardBuilder:
         }
 
     @staticmethod
-    def build_quota_card(quota_data):
-        elements = [
-            {
-                "tag": "markdown",
-                "content": "⚡ **Google AI Pro 套餐额度大盘**\n实时同步自宿主机本地 codex 语言服务器（LSP）的官方配额。"
-            },
-            {
-                "tag": "hr"
-            }
-        ]
-        
-        if not quota_data or "response" not in quota_data or "groups" not in quota_data["response"]:
+    def build_quota_card(quota_result):
+        elements = []
+
+        if not quota_result or not isinstance(quota_result, dict):
             elements.append({
                 "tag": "markdown",
-                "content": "❌ **无法获取配额数据**\n请检查宿主机上的 codex 登录状态与网络连接。"
+                "content": "❌ **未获取到额度数据**\n查询返回为空，请稍后重试。"
             })
-        else:
-            groups = quota_data["response"]["groups"]
-            for g_idx, group in enumerate(groups):
-                group_name = group.get("displayName", "未知模型组")
-                group_desc = group.get("description", "")
-                
+        elif not quota_result.get("ok"):
+            err = quota_result.get("error", "unknown")
+            msg = quota_result.get("message", "未知错误")
+            if err == "not_installed":
                 elements.append({
                     "tag": "markdown",
-                    "content": f"📁 **{group_name}**\n*{group_desc}*"
+                    "content": (
+                        "❌ **未找到 Codex CLI**\n"
+                        "请先安装 Codex CLI（`npm i -g @openai/codex`）并确保 `codex` 命令位于 PATH 中。"
+                    )
                 })
-                
-                buckets = group.get("buckets", [])
-                for b_idx, bucket in enumerate(buckets):
-                    bucket_name = bucket.get("displayName", "未知配额项")
-                    desc = bucket.get("description", "")
-                    remaining = bucket.get("remainingFraction", 0.0)
-                    reset_time = bucket.get("resetTime", "")
-                    
-                    percentage = round(remaining * 100, 1)
-                    progress_emoji = "🟢" if percentage > 50 else ("🟡" if percentage > 20 else "🔴")
-                    
-                    filled_blocks = int(percentage / 5)
-                    bar_str = "█" * filled_blocks + "░" * (20 - filled_blocks)
-                    
-                    content = f"🔹 **{bucket_name}**\n`[{bar_str}]` **{percentage}%** 剩余 ({progress_emoji})\n"
-                    if desc:
-                        content += f"💡 *{desc}*\n"
-                    if reset_time:
-                        try:
-                            from datetime import datetime
-                            time_part = reset_time.replace("Z", "")
-                            dt = datetime.fromisoformat(time_part.split(".")[0])
-                            friendly_time = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            content += f"🕒 重置时间: `{friendly_time}`"
-                        except Exception:
-                            content += f"🕒 重置时间: `{reset_time}`"
-                            
-                    elements.append({
-                        "tag": "markdown",
-                        "content": content
-                    })
-                    
-                if g_idx < len(groups) - 1:
-                    elements.append({
-                        "tag": "hr"
-                    })
-                    
-            desc_text = quota_data["response"].get("description", "")
-            if desc_text:
+            elif err == "not_logged_in":
                 elements.append({
-                    "tag": "hr"
+                    "tag": "markdown",
+                    "content": (
+                        "🔐 **未检测到 Codex 官方登录状态**\n"
+                        "额度查询需要 ChatGPT 订阅账号（Plus / Pro / Team）。\n\n"
+                        "请在宿主机终端运行：\n"
+                        "`codex login`\n\n"
+                        "完成 OAuth 登录后，再次发送 `/quota` 即可查询。"
+                    )
                 })
+            elif err == "timeout":
                 elements.append({
-                    "tag": "note",
-                    "elements": [
-                        {
-                            "tag": "plain_text",
-                            "content": desc_text
-                        }
-                    ]
+                    "tag": "markdown",
+                    "content": f"⏱️ **查询超时**\n{msg}"
                 })
-                
-        elements.append({
-            "tag": "hr"
-        })
+            else:
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"❌ **查询失败**\n{msg}"
+                })
+        else:
+            data = quota_result.get("data") or {}
+            rate_limits = data.get("rateLimits") or data
+            primary = rate_limits.get("primary") or {}
+            secondary = rate_limits.get("secondary") or {}
+
+            plan_type = (rate_limits.get("planType") or rate_limits.get("plan_type") or "未知套餐")
+            credits = rate_limits.get("credits") or {}
+            credits_balance = credits.get("balance")
+
+            def _render_window(win, title_prefix):
+                if not win:
+                    return None
+                used_pct = win.get("usedPercent")
+                if used_pct is None:
+                    return None
+                try:
+                    used_pct = float(used_pct)
+                except (TypeError, ValueError):
+                    return None
+                remaining_pct = max(0.0, 100.0 - used_pct)
+                filled = int(remaining_pct / 5)
+                bar_str = "█" * filled + "░" * (20 - filled)
+
+                duration_mins = win.get("windowDurationMins") or win.get("window_duration_mins")
+                if duration_mins:
+                    try:
+                        mins = int(duration_mins)
+                        if mins >= 7 * 24 * 60:
+                            window_label = "周窗口"
+                        elif mins >= 24 * 60:
+                            window_label = "日窗口"
+                        elif mins >= 60:
+                            window_label = f"{mins // 60} 小时窗口"
+                        else:
+                            window_label = f"{mins} 分钟窗口"
+                    except (TypeError, ValueError):
+                        window_label = "窗口"
+                else:
+                    window_label = "窗口"
+
+                resets_at = win.get("resetsAt") or win.get("resets_at")
+                reset_line = ""
+                if resets_at:
+                    try:
+                        from datetime import datetime, timezone
+                        reset_ts = float(resets_at)
+                        reset_dt = datetime.fromtimestamp(reset_ts, tz=timezone.utc).astimezone()
+                        reset_line = f"\n🕒 重置时间: `{reset_dt.strftime('%Y-%m-%d %H:%M:%S')}`"
+                    except Exception:
+                        reset_line = ""
+
+                progress_emoji = "🟢" if remaining_pct > 50 else ("🟡" if remaining_pct > 20 else "🔴")
+                return (
+                    f"{title_prefix}**{window_label}**\n"
+                    f"`[{bar_str}]` **{remaining_pct:.1f}%** 剩余 ({progress_emoji})\n"
+                    f"已使用 {used_pct:.1f}%{reset_line}"
+                )
+
+            header_line = f"📇 **套餐类型**: `{plan_type}`"
+            elements.append({"tag": "markdown", "content": header_line})
+            elements.append({"tag": "hr"})
+
+            primary_block = _render_window(primary, "🔹 ")
+            if primary_block:
+                elements.append({"tag": "markdown", "content": primary_block})
+
+            secondary_block = _render_window(secondary, "🔸 ")
+            if secondary_block:
+                if primary_block:
+                    elements.append({"tag": "hr"})
+                elements.append({"tag": "markdown", "content": secondary_block})
+
+            if not primary_block and not secondary_block:
+                elements.append({
+                    "tag": "markdown",
+                    "content": "ℹ️ 当前账号未返回窗口配额数据（可能是 usage-based 计费账号）。"
+                })
+
+            if credits_balance:
+                elements.append({"tag": "hr"})
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"💰 **积分余额**: `{credits_balance}`"
+                })
+
+            elements.append({
+                "tag": "hr"
+            })
+            elements.append({
+                "tag": "note",
+                "elements": [
+                    {
+                        "tag": "plain_text",
+                        "content": "数据来源：本机 Codex CLI (codex app-server --stdio) · 仅反映官方订阅额度，自定义 provider 不在此列"
+                    }
+                ]
+            })
+
         elements.append({
             "tag": "action",
             "actions": [
                 {
                     "tag": "button",
-                    "text": {"tag": "plain_text", "content": "🔄 刷新额度配额"},
+                    "text": {"tag": "plain_text", "content": "🔄 刷新额度"},
                     "type": "primary",
                     "value": {"action": "refresh_quota"}
                 }
             ]
         })
-        
+
         elements.append(CardBuilder._create_footer())
-        
+
+        is_error = (not quota_result or not quota_result.get("ok")) if isinstance(quota_result, dict) else True
+        header_template = "red" if is_error else "blue"
+        header_title = "❌ 额度查询失败" if is_error else "📊 Codex 订阅额度看板"
+
         return {
             "config": {"wide_screen_mode": True},
             "header": {
-                "template": "blue",
-                "title": {"content": "📊 Google AI Pro 套餐额度查询", "tag": "plain_text"}
+                "template": header_template,
+                "title": {"content": header_title, "tag": "plain_text"}
             },
             "elements": elements
         }

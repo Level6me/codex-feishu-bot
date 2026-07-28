@@ -728,7 +728,16 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "状态已刷新！"}})
 
     elif action_value.get("action") == "refresh_quota":
-        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "Codex CLI 当前不提供额度查询接口"}})
+        if main_loop and main_loop.is_running():
+            async def do_refresh_quota():
+                from codex_quota import fetch_codex_quota
+                loop = asyncio.get_running_loop()
+                quota_result = await loop.run_in_executor(None, lambda: asyncio.run(fetch_codex_quota()))
+                new_card = CardBuilder.build_quota_card(quota_result)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: patch_interactive_card_sdk(card_message_id, new_card))
+            asyncio.run_coroutine_threadsafe(do_refresh_quota(), main_loop)
+
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "额度已刷新！"}})
 
     elif action_value.get("action") == "forget_single_memory":
         idx = int(action_value.get("index"))
