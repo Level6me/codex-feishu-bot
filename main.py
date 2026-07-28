@@ -562,7 +562,14 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
         if main_loop and main_loop.is_running():
             async def do_switch():
                 session_data = await get_session_async(chat_id)
-                old_model = session_data.get("codex_model") or "默认 (CLI 配置)"
+                old_model = session_data.get("codex_model")
+                if not old_model:
+                    try:
+                        from codex_quota import fetch_codex_default_model
+                        default_model = await fetch_codex_default_model()
+                    except Exception:
+                        default_model = ""
+                    old_model = f"默认 ({default_model})" if default_model else "默认 (CLI 配置)"
                 session_data["codex_model"] = "" if "默认" in new_model else new_model
                 await save_session_async(chat_id, session_data)
                 log.info(f"Switched codex model to {new_model} in chat {chat_id}")
