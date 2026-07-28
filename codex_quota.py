@@ -150,6 +150,11 @@ async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
     return await _rpc_call("account/rateLimits/read", None, timeout)
 
 
+async def fetch_codex_account(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
+    """查询当前登录的 Codex 账号信息（email / 套餐类型）。"""
+    return await _rpc_call("account/read", {}, timeout)
+
+
 async def fetch_codex_models(timeout: float = CODEX_QUOTA_TIMEOUT, force_refresh: bool = False) -> list:
     """获取当前账号真实可用的 Codex 模型列表（10 分钟缓存）。
 
