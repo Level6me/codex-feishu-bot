@@ -48,7 +48,7 @@ BOT_PROCESS_NAME = "codex-feishu-bot"
 
 # --- Versioning Configuration ---
 BASE_VERSION_PREFIX = "v1.0."
-VERSION_START_COMMIT = 62  # Used to calculate patch number (commit_count - start_commit)
+VERSION_START_COMMIT = 0  # Used to calculate patch number (commit_count - start_commit)
 
 # --- Whitelist & Permission Configuration ---
 ALLOWED_USERS = [uid.strip() for uid in settings.allowed_users.split(",") if uid.strip()]
