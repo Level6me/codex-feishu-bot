@@ -631,7 +631,6 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
                 success_card = CardBuilder.build_ai_response(
                     success_text,
                     current_model=session_data.get('model', 'Default'),
-                    current_role=session_data.get('role', '无'),
                     current_project=target_path
                 )
                 await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(card_message_id, success_card))
@@ -785,6 +784,39 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
             asyncio.run_coroutine_threadsafe(do_browse_recent_page(), main_loop)
             
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": f"正在载入第 {target_page} 页项目..."}})
+
+    elif action_value.get("action") == "set_workspace_prompt":
+        if main_loop and main_loop.is_running():
+            async def do_set_workspace_prompt():
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = "project"
+                await save_session_async(chat_id, session_data)
+                prompt_msg = "📂 **请直接回复一个路径以设置当前活跃开发工作区**：\n\n*(支持 `~` 开头的路径，例如：`~/github/my-project`；路径必须已存在且为目录)*"
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, prompt_msg))
+            asyncio.run_coroutine_threadsafe(do_set_workspace_prompt(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复路径以设置开发工作区！"}})
+
+    elif action_value.get("action") == "add_note_prompt":
+        if main_loop and main_loop.is_running():
+            async def do_add_note_prompt():
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = "note_add"
+                await save_session_async(chat_id, session_data)
+                prompt_msg = "📝 **请直接回复笔记内容以添加笔记**：\n\n*(格式：第一个空格前的内容为标题，其余为正文。例如：`购物清单 牛奶、鸡蛋、面包`)*"
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, prompt_msg))
+            asyncio.run_coroutine_threadsafe(do_add_note_prompt(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复笔记内容！"}})
+
+    elif action_value.get("action") == "add_memory_prompt":
+        if main_loop and main_loop.is_running():
+            async def do_add_memory_prompt():
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = "remember"
+                await save_session_async(chat_id, session_data)
+                prompt_msg = "🧠 **请直接回复您想让我长期记住的偏好或设定**：\n\n*(例如：`我开发只用 Python`、`回复请使用中文`)*"
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, prompt_msg))
+            asyncio.run_coroutine_threadsafe(do_add_memory_prompt(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复要记住的偏好！"}})
     
     return P2CardActionTriggerResponse()
 

@@ -229,7 +229,7 @@ class CardBuilder:
     TRUNCATION_NOTICE = "\n\n\n> ⚠️ **回复内容过长，已截断显示。完整内容请拆分任务后分批查看。**"
 
     @staticmethod
-    def build_ai_response(reply_text, choice_card_data=None, current_model="Default", current_role="无", current_project="默认", is_error=False, is_streaming=False):
+    def build_ai_response(reply_text, choice_card_data=None, current_model="Default", current_project="默认", is_error=False, is_streaming=False):
         elements = []
 
         # 1. Main Text
@@ -313,7 +313,7 @@ class CardBuilder:
                 
             elements.append({
                 "tag": "markdown",
-                "content": f"<font color='grey'>🤖 模型: {current_model} | 🎭 角色: {current_role} | 📂 项目: {project_name_only} | 💡 键入 /help 查看指令</font>"
+                "content": f"<font color='grey'>🤖 模型: {current_model} | 📂 项目: {project_name_only} | 💡 键入 /help 查看指令</font>"
             })
 
         # 4. Standard Footer
@@ -335,10 +335,38 @@ class CardBuilder:
     def build_dir_browser_card(active_project_path, recent_projects=None, recent_page=1, workspace_root=None, ignored_projects=None):
         elements = []
         
-        # 1. 顶部当前活跃项目展示
+        # 1. 顶部当前活跃项目展示（附带设置按钮）
         elements.append({
-            "tag": "markdown",
-            "content": f"📂 **当前活跃开发工作区**：\n`{active_project_path}`"
+            "tag": "column_set",
+            "flex_mode": "none",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "markdown",
+                            "content": f"📂 **当前活跃开发工作区**：\n`{active_project_path}`"
+                        }
+                    ]
+                },
+                {
+                    "tag": "column",
+                    "width": "auto",
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⚙️ 设置"},
+                            "type": "default",
+                            "size": "small",
+                            "value": {"action": "set_workspace_prompt"}
+                        }
+                    ]
+                }
+            ]
         })
         
         # 确定公共根目录
@@ -614,12 +642,12 @@ class CardBuilder:
         if not memories:
             elements.append({
                 "tag": "markdown",
-                "content": "📭 **当前没有记录您的任何长时偏好。**\n\n您可以通过发送 `/remember <偏好>` 来快速添加（例如：`/remember 我开发只用 Python`）。"
+                "content": "📭 **当前没有记录您的任何长时偏好。**\n\n点击下方「➕ 新增偏好」按钮即可添加（例如：我开发只用 Python）。"
             })
         else:
             elements.append({
                 "tag": "markdown",
-                "content": "🧠 **您的长时偏好与设定记录**：\n*(点击右侧「忘记」可立即在机器人记忆中擦除对应条目)*"
+                "content": "🧠 **您的长时偏好与设定记录**：\n*(点击右侧「忘记」可立即在机器人记忆中擦除对应条目，点击下方「➕ 新增偏好」可添加新条目)*"
             })
             elements.append({"tag": "hr"})
             
@@ -655,6 +683,17 @@ class CardBuilder:
                     "columns": columns
                 })
                 
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "➕ 新增偏好"},
+                    "type": "primary",
+                    "value": {"action": "add_memory_prompt"}
+                }
+            ]
+        })
         elements.append(CardBuilder._create_footer())
         
         return {
@@ -689,7 +728,7 @@ class CardBuilder:
         if not notes:
             elements.append({
                 "tag": "markdown",
-                "content": "📝 **您的记事本目前是空的。**"
+                "content": "📝 **您的记事本目前是空的。**\n\n点击下方「➕ 添加笔记」按钮即可添加。"
             })
         else:
             elements.append({
@@ -749,21 +788,30 @@ class CardBuilder:
             elements.append({
                 "tag": "hr"
             })
-            elements.append({
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": "🧹 清空全部记事本"},
-                        "type": "danger",
-                        "confirm": {
-                            "title": {"tag": "plain_text", "content": "确认清空"},
-                            "text": {"tag": "plain_text", "content": "您确定要清空所有笔记吗？此操作不可撤销。"}
-                        },
-                        "value": {"action": "clear_notes"}
-                    }
-                ]
+            
+        note_actions = [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "➕ 添加笔记"},
+                "type": "primary",
+                "value": {"action": "add_note_prompt"}
+            }
+        ]
+        if notes:
+            note_actions.append({
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "🧹 清空全部记事本"},
+                "type": "danger",
+                "confirm": {
+                    "title": {"tag": "plain_text", "content": "确认清空"},
+                    "text": {"tag": "plain_text", "content": "您确定要清空所有笔记吗？此操作不可撤销。"}
+                },
+                "value": {"action": "clear_notes"}
             })
+        elements.append({
+            "tag": "action",
+            "actions": note_actions
+        })
             
         elements.append(CardBuilder._create_footer())
         
@@ -772,6 +820,71 @@ class CardBuilder:
             "header": {
                 "template": "orange",
                 "title": {"content": "📔 机器人记事本", "tag": "plain_text"}
+            },
+            "elements": elements
+        }
+
+    @staticmethod
+    def build_help_card():
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    "**🤖 会话与模型**\n"
+                    "🔹 `/model` : 弹出模型切换面板，自动获取当前账号支持的 Codex 模型\n"
+                    "🔹 `/clear` : 清空当前对话的上下文记忆，重新开始\n"
+                    "🔹 `/context` : 查看当前会话的真实 Token 用量看板\n"
+                    "🔹 `/quota` : 查询 Codex 官方订阅额度用量\n"
+                    "🔹 `/stop` : 紧急刹车！强制中止正在后台生成的耗时任务"
+                )
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": (
+                    "**📂 项目与工作区**\n"
+                    "🔹 `/project` : 打开可视化项目管理器（翻页选择、新建项目、⚙️ 设置活跃工作区）\n"
+                    "🔹 `/project <路径>` : 设定公共项目根目录"
+                )
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": (
+                    "**🧠 记忆与笔记**\n"
+                    "🔹 `/memory` : 偏好记忆管理器（面板内可 ➕ 新增偏好 / 忘记条目）\n"
+                    "🔹 `/note` 或 `/notes` : 机器人记事本（面板内可 ➕ 添加笔记 / 查看 / 删除 / 清空）\n"
+                    "🔹 `/brain` : 查看 Codex 全局记忆（~/.codex/AGENTS.md）"
+                )
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": (
+                    "**🛠️ 系统运维**\n"
+                    "🔹 `/status` : 查看机器人进程 CPU / 内存 / 运行状态\n"
+                    "🔹 `/update` : 检查并获取云端最新版本的机器人引擎核心\n"
+                    "🔹 `/ping` : 测试机器人是否在线\n"
+                    "🔹 `/help` : 显示此帮助菜单"
+                )
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": (
+                    "*✨ 隐藏黑科技提示：*\n"
+                    "* **多模态解析**：直接向我发送图片或文档 (PDF/Word/文本)，我能直接阅读分析！*\n"
+                    "* **远程终端**：我可以读取你电脑上的文件，甚至直接执行如 `ls -al` 等终端命令！*\n"
+                    "* **全网搜索**：发给我任意网页链接，我可以帮你提取摘要！*"
+                )
+            },
+            CardBuilder._create_footer()
+        ]
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "blue",
+                "title": {"content": "💡 Codex 机器人操作指南", "tag": "plain_text"}
             },
             "elements": elements
         }

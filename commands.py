@@ -183,9 +183,9 @@ from enum import Enum
 
 class PendingCommand(str, Enum):
     REMEMBER = "remember"
-    ROLE = "role"
     PROJECT = "project"
     CREATE_PROJECT = "create_project"
+    NOTE_ADD = "note_add"
 
 async def handle_slash_command(user_text, message_id, chat_id, session_data, running_processes, chat_queues, chat_workers=None):
     log.info(f"handle_slash_command call: user_text='{user_text}', pending_command='{session_data.get('pending_command')}'")
@@ -214,22 +214,34 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
             return True, user_text
             
-        elif pending_command == PendingCommand.ROLE:
-            new_role = user_text.strip()
-            session_data["role"] = new_role
+        elif pending_command == PendingCommand.NOTE_ADD:
+            note_content = user_text.strip()
+            notes = session_data.get("notes", [])
+            notes.append(note_content)
+            session_data["notes"] = notes
             session_data.pop("pending_command", None)
             await save_session_async(chat_id, session_data)
-            user_text = f"请记住以下设定，并在接下来的对话中始终扮演这个角色：{new_role}。收到请回复：'好的，角色设定已生效！'"
-            return False, user_text
-            
+            reply_text = f"✅ 已保存笔记：\n{note_content}"
+            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+            return True, user_text
+
         elif pending_command == PendingCommand.PROJECT:
             new_project = user_text.strip()
             if new_project.lower() in ["clear", "default", "默认", "reset"]:
                 session_data["project"] = "默认"
                 reply_text = "📂 已将项目重置为默认工作空间！"
             else:
+                if new_project.startswith("~"):
+                    new_project = os.path.expanduser(new_project)
+                new_project = os.path.abspath(new_project)
+                if not os.path.isdir(new_project):
+                    session_data.pop("pending_command", None)
+                    await save_session_async(chat_id, session_data)
+                    reply_text = f"❌ 设置失败：该路径不存在或不是目录：\n`{new_project}`"
+                    await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+                    return True, user_text
                 session_data["project"] = new_project
-                reply_text = f"📂 已成功将当前项目切换为：`{new_project}`"
+                reply_text = f"📂 已成功将当前开发工作区切换为：`{new_project}`"
             session_data.pop("pending_command", None)
             await save_session_async(chat_id, session_data)
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
@@ -285,23 +297,6 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         reply_text = "🔄 上下文已清空，开启新对话！"
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
         return True, user_text
-        
-    elif user_text.startswith("/remember"):
-        parts = user_text.split(" ", 1)
-        if len(parts) > 1 and parts[1].strip():
-            memory_text = parts[1].strip()
-            memories = await get_profile_async(chat_id)
-            memories.append(memory_text)
-            await save_profile_async(chat_id, memories)
-            reply_text = f"🧠 已为您永久记录偏好：\n- {memory_text}"
-            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
-            return True, user_text
-        else:
-            session_data["pending_command"] = PendingCommand.REMEMBER
-            await save_session_async(chat_id, session_data)
-            reply_text = "🧠 请直接输入您希望我永久记住的偏好或设定："
-            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
-            return True, user_text
         
     elif user_text.startswith("/memory"):
         memories = await get_profile_async(chat_id)
@@ -421,13 +416,6 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             
         return True, user_text
 
-        
-    elif user_text.startswith("/forget"):
-        await save_profile_async(chat_id, [])
-        reply_text = "🗑️ 您的所有长时记忆偏好已被彻底清空！"
-        await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
-        return True, user_text
-
     elif user_text.startswith("/newproj_resolve"):
         parts = user_text.split(" ", 2)
         if len(parts) >= 3:
@@ -533,21 +521,6 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, brain_card))
         return True, user_text
 
-    elif user_text.startswith("/role"):
-        parts = user_text.split(" ", 1)
-        if len(parts) > 1 and parts[1].strip():
-            new_role = parts[1].strip()
-            session_data["role"] = new_role
-            await save_session_async(chat_id, session_data)
-            user_text = f"请记住以下设定，并在接下来的对话中始终扮演这个角色：{new_role}。收到请回复：'好的，角色设定已生效！'"
-            return False, user_text
-        else:
-            session_data["pending_command"] = PendingCommand.ROLE
-            await save_session_async(chat_id, session_data)
-            reply_text = "🎭 请直接输入您希望我扮演的角色（例如：资深Python工程师）："
-            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
-            return True, user_text
-            
     elif user_text.startswith("/project"):
         args = user_text[len("/project"):].strip()
         if args:
@@ -590,28 +563,8 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             return True, user_text
         
     elif user_text.startswith("/help"):
-        reply_text = """💡 **Codex 机器人高级操作指南**
-
-🔹 `/model` : 弹出模型切换面板，一键热切换 Codex 模型
-🔹 `/role <设定>` : 让机器人扮演特定角色 (例如: `/role 资深Python工程师`)
-🔹 `/project [路径]` : 管理及切换工作区项目 (不带参发送可视化项目管理器，支持翻页选择与新建；带参直接精准切换至指定路径)
-🔹 `/remember <设定>` : 让机器人永久记住你的偏好 (例如: `/remember 我写代码只用 Python`)
-🔹 `/memory` : 查看机器人当前记住的所有偏好
-🔹 `/forget` : 清除机器人的长时记忆偏好
-🔹 `/note [内容]` : 添加或管理备忘录 (支持 add/list/del/clear)
-🔹 `/clear` : 清空当前对话的上下文记忆，重新开始
-🔹 `/context` : 查看当前会话的真实 Token 用量看板
-🔹 `/brain` : 查看 Codex 全局记忆（~/.codex/AGENTS.md）
-🔹 `/status` : 查看机器人进程 CPU / 内存 / 运行状态
-🔹 `/stop` : 紧急刹车！强制中止正在后台生成的耗时任务
-🔹 `/update` : 检查并获取云端最新版本的机器人引擎核心
-🔹 `/help` : 显示此帮助菜单
-
-*✨ 隐藏黑科技提示：*
-* **多模态解析**：直接向我发送图片或文档 (PDF/Word/文本)，我能直接阅读分析！语音/视频会以本地文件转交，但 Codex 暂无法直接听看。*
-* **远程终端**：我可以读取你电脑上的文件，甚至直接执行如 `ls -al` 等终端命令！*
-* **全网搜索**：发给我任意网页链接，我可以帮你提取摘要！*"""
-        await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+        help_card = CardBuilder.build_help_card()
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, help_card))
         return True, user_text
 
     reply_text = f"❓ 未知指令：`{user_text.split()[0]}`\n发送 `/help` 查看全部可用指令。"

@@ -251,7 +251,7 @@ async def execute_codex(
 
     final_card = CardBuilder.build_ai_response(
         reply, choice_card_data=choice_card_data,
-        current_model=model or "Codex", current_role=session_data.get("role", "None"),
+        current_model=model or "Codex",
         current_project=session_data.get("project", "Default"), is_error=failed, is_streaming=False,
     )
     try:

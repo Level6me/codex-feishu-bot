@@ -78,7 +78,7 @@ async def get_session_async(chat_id):
                     if data.get('model') == 'Gemini 3.5 Flash':
                         data['model'] = 'Gemini 3.5 Flash (Medium)'
                     return data
-                return {"conversation": "", "model": "Codex CLI 默认模型", "role": "无", "project": "默认"}
+                return {"conversation": "", "model": "Codex CLI 默认模型", "project": "默认"}
 
 async def save_session_async(chat_id, data):
     async with _get_session_lock(chat_id):
@@ -133,7 +133,7 @@ def get_session_sync(chat_id):
         if data.get('model') == 'Gemini 3.5 Flash':
             data['model'] = 'Gemini 3.5 Flash (Medium)'
         return data
-    return {"conversation": "", "model": "Codex CLI 默认模型", "role": "无", "project": "默认"}
+    return {"conversation": "", "model": "Codex CLI 默认模型", "project": "默认"}
 
 def save_session_sync(chat_id, data):
     conn = get_db()
