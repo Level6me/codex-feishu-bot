@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
     ReplyMessageRequest, ReplyMessageRequestBody, PatchMessageRequest,
@@ -48,6 +50,8 @@ def delete_emoji_sdk(message_id, reaction_id):
 
 @with_retry()
 def send_reply_sdk(message_id, reply_text):
+    if len(reply_text) > 28000:
+        reply_text = reply_text[:28000] + "\n\n...(内容过长，已截断)"
     req = ReplyMessageRequest.builder() \
         .message_id(message_id) \
         .request_body(ReplyMessageRequestBody.builder() \
@@ -104,12 +108,22 @@ def download_message_resource_sdk(message_id, file_key, resource_type, output_pa
     
     if resp.code == 0:
         try:
-            with open(output_path, "wb") as f:
-                while True:
-                    chunk = resp.file.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+            dir_name = os.path.dirname(output_path) or "."
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    while True:
+                        chunk = resp.file.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                os.replace(tmp_path, output_path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
             return True
         except Exception as e:
             log.error(f"[download_message_resource_sdk] Error saving file: {e}")

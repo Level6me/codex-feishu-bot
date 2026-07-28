@@ -225,13 +225,18 @@ class CardBuilder:
             ]
         }
 
+    MAX_MARKDOWN_CHARS = 25000
+    TRUNCATION_NOTICE = "\n\n\n> ⚠️ **回复内容过长，已截断显示。完整内容请拆分任务后分批查看。**"
+
     @staticmethod
     def build_ai_response(reply_text, choice_card_data=None, current_model="Default", current_role="无", current_project="默认", is_error=False, is_streaming=False):
         elements = []
-        
+
         # 1. Main Text
         if reply_text:
             content = reply_text
+            if len(content) > CardBuilder.MAX_MARKDOWN_CHARS:
+                content = content[:CardBuilder.MAX_MARKDOWN_CHARS] + CardBuilder.TRUNCATION_NOTICE
             if is_streaming:
                 content += " ⏳" # Blinking cursor effect
             elements.append({
