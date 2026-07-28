@@ -1009,8 +1009,12 @@ class CardBuilder:
         }
 
     @staticmethod
-    def build_quota_card(quota_result):
+    def build_quota_card(quota_result, account_result=None):
         elements = []
+
+        account = None
+        if account_result and account_result.get("ok"):
+            account = (account_result.get("data") or {}).get("account")
 
         if not quota_result or not isinstance(quota_result, dict):
             elements.append({
@@ -1109,6 +1113,16 @@ class CardBuilder:
                 )
 
             header_line = f"📇 **套餐类型**: `{plan_type}`"
+            if account:
+                if account.get("type") == "chatgpt":
+                    acct_email = account.get("email") or "未知"
+                    acct_plan = account.get("planType") or ""
+                    acct_line = f"👤 **登录账号**: `{acct_email}`" + (f" (ChatGPT {acct_plan})" if acct_plan else "")
+                elif account.get("type") == "apiKey":
+                    acct_line = "👤 **登录方式**: API Key"
+                else:
+                    acct_line = f"👤 **登录方式**: {account.get('type', '未知')}"
+                elements.append({"tag": "markdown", "content": acct_line})
             elements.append({"tag": "markdown", "content": header_line})
             elements.append({"tag": "hr"})
 
