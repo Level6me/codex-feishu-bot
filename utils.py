@@ -14,7 +14,7 @@ def with_retry(max_retries=3, initial_delay=1.0, backoff_factor=2.0):
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
+                except (ConnectionError, TimeoutError, OSError) as e:
                     if attempt == max_retries:
                         log.error(f"[Retry] Function {func.__name__} failed after {max_retries} retries. Error: {e}")
                         raise

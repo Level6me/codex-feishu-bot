@@ -1,8 +1,6 @@
 import asyncio
 import json
-import subprocess
 import os
-import uuid
 import re
 import sys
 import signal
@@ -34,6 +32,19 @@ chat_queues = {}
 chat_workers = {}
 chat_media_batches = {}
 
+_SEEN_MESSAGE_IDS = {}
+_SEEN_MESSAGE_IDS_MAX = 1000
+
+
+def _mark_seen(message_id):
+    if message_id in _SEEN_MESSAGE_IDS:
+        return False
+    if len(_SEEN_MESSAGE_IDS) >= _SEEN_MESSAGE_IDS_MAX:
+        oldest = next(iter(_SEEN_MESSAGE_IDS))
+        del _SEEN_MESSAGE_IDS[oldest]
+    _SEEN_MESSAGE_IDS[message_id] = True
+    return True
+
 async def process_chat_queue(chat_id):
     queue = chat_queues[chat_id]
     try:
@@ -53,6 +64,8 @@ async def process_chat_queue(chat_id):
         log.info(f"Chat worker for {chat_id} was cancelled by /stop")
     finally:
         chat_workers.pop(chat_id, None)
+        if chat_id in chat_queues and chat_queues[chat_id].empty():
+            chat_queues.pop(chat_id, None)
 
 async def _process_image_message(loop, message_id, content_json, content_raw):
     image_key = content_json.get("image_key", "")
@@ -302,11 +315,18 @@ async def _process_single_task(chat_id, task):
             final_prompt = f"[System Context: Please strictly follow the user's permanent preferences below:]\n{memory_block}\n\n[User's Message:]\n{user_text}"
             
     # Delegate execution to executor
-    is_error = await execute_agent(
-        chat_id, user_text, message_id, bot_reply_msg_id, session_data, 
-        is_new_conversation, system_instruction, final_prompt, downloaded_file_name, 
-        download_success, running_processes, image_paths=image_paths
-    )
+    try:
+        is_error = await asyncio.wait_for(
+            execute_agent(
+                chat_id, user_text, message_id, bot_reply_msg_id, session_data,
+                is_new_conversation, system_instruction, final_prompt, downloaded_file_name,
+                download_success, running_processes, image_paths=image_paths
+            ),
+            timeout=2000,
+        )
+    except asyncio.TimeoutError:
+        log.error(f"execute_agent timed out after 2000s for chat {chat_id}")
+        is_error = True
     
     if is_error:
         await set_emoji(message_id, "CrossMark")
@@ -344,32 +364,6 @@ async def delete_emoji(message_id, reaction_id):
 
 # emoji_spinner removed
 
-async def send_reply(message_id, reply_text):
-    reply_proc = await asyncio.create_subprocess_exec(
-        "lark-cli", "im", "+messages-reply", 
-        "--message-id", message_id,
-        "--text", reply_text,
-        "--as", "bot",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=subprocess.DEVNULL
-    )
-    stdout, stderr = await reply_proc.communicate()
-    if reply_proc.returncode != 0:
-        print(f"[Error send_reply] {stderr.decode()}", flush=True)
-
-async def send_interactive_card(message_id, card_content):
-    reply_proc = await asyncio.create_subprocess_exec(
-        "lark-cli", "im", "+messages-reply", 
-        "--message-id", message_id,
-        "--msg-type", "interactive",
-        "--content", json.dumps(card_content),
-        "--as", "bot",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=subprocess.DEVNULL
-    )
-    await reply_proc.communicate()
 
 async def handle_message_async(message_id, chat_id, message_type, content_raw):
     try:
@@ -513,7 +507,11 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     chat_id = data.event.message.chat_id
     message_type = data.event.message.message_type
     content_raw = data.event.message.content
-    
+
+    if not _mark_seen(message_id):
+        log.warning(f"Duplicate message ignored: message_id={message_id}")
+        return
+
     if not isinstance(content_raw, str):
         log.warning(f"Invalid content type received: {type(content_raw)}")
         return
