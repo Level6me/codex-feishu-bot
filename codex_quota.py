@@ -17,7 +17,7 @@ from logger import log
 CODEX_QUOTA_TIMEOUT = 10.0
 MODEL_CACHE_TTL = 600
 
-_model_cache = {"models": None, "fetched_at": 0.0}
+_model_cache = {"models": None, "default": None, "fetched_at": 0.0}
 
 
 def _locate_codex() -> str:
@@ -166,14 +166,24 @@ async def fetch_codex_models(timeout: float = CODEX_QUOTA_TIMEOUT, force_refresh
         return _model_cache["models"] or []
 
     models = []
+    default_model = None
     for item in result["data"].get("data", []):
         if item.get("hidden"):
             continue
         model_id = item.get("model") or item.get("id")
         if model_id:
             models.append(model_id)
+            if item.get("isDefault"):
+                default_model = model_id
 
     if models:
         _model_cache["models"] = models
+        _model_cache["default"] = default_model
         _model_cache["fetched_at"] = now
     return models
+
+
+async def fetch_codex_default_model(timeout: float = CODEX_QUOTA_TIMEOUT) -> str:
+    """获取当前账号的默认 Codex 模型名（走同一份 10 分钟缓存），失败返回空字符串。"""
+    await fetch_codex_models(timeout)
+    return _model_cache["default"] or ""

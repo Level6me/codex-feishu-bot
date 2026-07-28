@@ -481,14 +481,17 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         return True, user_text
 
     elif user_text.strip() in ["/model", "/card", "/menu"]:
-        current_model = session_data.get("codex_model") or CODEX_MODEL or "默认 (CLI 配置)"
-        from codex_quota import fetch_codex_models
+        from codex_quota import fetch_codex_models, fetch_codex_default_model
         try:
             live_models = await fetch_codex_models()
+            default_model = await fetch_codex_default_model()
         except Exception as e:
             log.warning(f"fetch_codex_models failed: {e}")
             live_models = []
-        available = ["默认 (CLI 配置)"] + (live_models or CODEX_MODELS)
+            default_model = ""
+        default_label = f"默认 ({default_model})" if default_model else "默认 (CLI 配置)"
+        current_model = session_data.get("codex_model") or CODEX_MODEL or default_label
+        available = [default_label] + (live_models or CODEX_MODELS)
         panel_card = CardBuilder.build_model_panel(available, current_model)
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, panel_card))
         return True, user_text
