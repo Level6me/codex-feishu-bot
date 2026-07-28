@@ -507,8 +507,11 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         return True, user_text
 
     elif user_text.strip() == "/quota":
-        reply_text = "ℹ️ Codex CLI 当前没有提供可供机器人读取的额度查询接口。"
-        await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+        from codex_quota import fetch_codex_quota
+        loop = asyncio.get_running_loop()
+        quota_result = await loop.run_in_executor(None, lambda: asyncio.run(fetch_codex_quota()))
+        quota_card = CardBuilder.build_quota_card(quota_result)
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, quota_card))
         return True, user_text
 
     elif user_text.strip() == "/brain":
