@@ -569,8 +569,8 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
                         default_model = await fetch_codex_default_model()
                     except Exception:
                         default_model = ""
-                    old_model = f"默认 ({default_model})" if default_model else "默认 (CLI 配置)"
-                session_data["codex_model"] = "" if "默认" in new_model else new_model
+                    old_model = default_model or "默认 (CLI 配置)"
+                session_data["codex_model"] = new_model
                 await save_session_async(chat_id, session_data)
                 log.info(f"Switched codex model to {new_model} in chat {chat_id}")
                 result_card = CardBuilder.build_model_switch_result_card(new_model, old_model)
