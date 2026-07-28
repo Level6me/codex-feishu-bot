@@ -1,7 +1,7 @@
-"""Codex 官方订阅额度查询客户端。
+"""Codex 官方订阅额度与模型列表查询客户端。
 
 通过启动 `codex app-server --stdio` 子进程，使用 JSON-RPC 协议调用
-`account/rateLimits/read` 方法读取当前登录账号的额度信息。
+`account/rateLimits/read` / `model/list` 方法。
 该方案参考 Codex-Meter (https://github.com/Oldleeo/Codex-Meter)。
 
 前置条件：用户必须先运行 `codex login` 登录官方 ChatGPT 账号。
@@ -11,9 +11,13 @@ import asyncio
 import json
 import os
 import shutil
+import time
 from logger import log
 
 CODEX_QUOTA_TIMEOUT = 10.0
+MODEL_CACHE_TTL = 600
+
+_model_cache = {"models": None, "fetched_at": 0.0}
 
 
 def _locate_codex() -> str:
@@ -39,11 +43,11 @@ def _locate_codex() -> str:
     return ""
 
 
-async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
-    """查询 Codex 官方订阅额度。
+async def _rpc_call(method: str, params, timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
+    """启动 codex app-server 并调用单个 JSON-RPC 方法。
 
     返回结构：
-      {"ok": True, "data": {primary, planType, credits, lifetimeTokens}}
+      {"ok": True, "data": <result>}
       {"ok": False, "error": "not_installed" | "not_logged_in" | "timeout" | "protocol" | "unknown", "message": "..."}
     """
     codex_bin = _locate_codex()
@@ -51,57 +55,18 @@ async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
         return {"ok": False, "error": "not_installed",
                 "message": "未找到 codex 可执行文件，请先安装 Codex CLI"}
 
-    process = await asyncio.create_subprocess_exec(
-        codex_bin, "app-server", "--stdio",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.PIPE,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            codex_bin, "app-server", "--stdio",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return {"ok": False, "error": "not_installed",
+                "message": "codex 可执行文件启动失败"}
 
     result = {"ok": False, "error": "protocol", "message": "未收到响应"}
-    got_init = False
-    got_rate_limits = False
-
-    async def _read_stdout():
-        nonlocal result, got_init, got_rate_limits
-        buffer = b""
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            buffer += line
-            while b"\n" in buffer:
-                raw, buffer = buffer.split(b"\n", 1)
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                # initialize 响应
-                if msg.get("id") == 1 and "result" in msg:
-                    got_init = True
-                    await _send({"method": "initialized"})
-                    await _send({"id": 2, "method": "account/rateLimits/read", "params": None})
-                    continue
-                # account/rateLimits/read 响应
-                if msg.get("id") == 2:
-                    if "error" in msg:
-                        err = msg["error"]
-                        code = err.get("code") if isinstance(err, dict) else None
-                        message = err.get("message", "") if isinstance(err, dict) else str(err)
-                        if code == -32600 or "authentication" in message.lower():
-                            result = {"ok": False, "error": "not_logged_in",
-                                      "message": "未检测到 Codex 官方登录状态，请先运行 `codex login`"}
-                        else:
-                            result = {"ok": False, "error": "protocol",
-                                      "message": f"RPC 错误: {message}"}
-                    elif "result" in msg:
-                        result = {"ok": True, "data": msg["result"]}
-                    got_rate_limits = True
-                    return
-                # 通知类消息（remoteControl/status/changed 等）直接忽略
 
     async def _send(obj):
         try:
@@ -109,7 +74,39 @@ async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
             process.stdin.write(data.encode("utf-8"))
             await process.stdin.drain()
         except Exception as e:
-            log.error(f"[codex_quota] send failed: {e}")
+            log.error(f"[codex_rpc] send failed: {e}")
+
+    async def _read_stdout():
+        nonlocal result
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if msg.get("id") == 1 and "result" in msg:
+                await _send({"method": "initialized"})
+                await _send({"id": 2, "method": method, "params": params})
+                continue
+            if msg.get("id") == 2:
+                if "error" in msg:
+                    err = msg["error"]
+                    code = err.get("code") if isinstance(err, dict) else None
+                    message = err.get("message", "") if isinstance(err, dict) else str(err)
+                    if code == -32600 or "authentication" in message.lower():
+                        result = {"ok": False, "error": "not_logged_in",
+                                  "message": "未检测到 Codex 官方登录状态，请先运行 `codex login`"}
+                    else:
+                        result = {"ok": False, "error": "protocol",
+                                  "message": f"RPC 错误: {message}"}
+                elif "result" in msg:
+                    result = {"ok": True, "data": msg["result"]}
+                return
 
     try:
         await _send({
@@ -128,11 +125,8 @@ async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
             read_task.cancel()
             result = {"ok": False, "error": "timeout",
                       "message": f"查询超时（{int(timeout)}s），Codex 服务未响应"}
-    except FileNotFoundError:
-        result = {"ok": False, "error": "not_installed",
-                  "message": "codex 可执行文件启动失败"}
     except Exception as e:
-        log.error(f"[codex_quota] unexpected error: {e}")
+        log.error(f"[codex_rpc] unexpected error: {e}")
         result = {"ok": False, "error": "unknown", "message": f"未知错误: {e}"}
     finally:
         try:
@@ -149,3 +143,37 @@ async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
             pass
 
     return result
+
+
+async def fetch_codex_quota(timeout: float = CODEX_QUOTA_TIMEOUT) -> dict:
+    """查询 Codex 官方订阅额度。"""
+    return await _rpc_call("account/rateLimits/read", None, timeout)
+
+
+async def fetch_codex_models(timeout: float = CODEX_QUOTA_TIMEOUT, force_refresh: bool = False) -> list:
+    """获取当前账号真实可用的 Codex 模型列表（10 分钟缓存）。
+
+    返回模型 id 字符串列表；查询失败时返回空列表，调用方应回退到静态配置。
+    """
+    now = time.time()
+    if (not force_refresh and _model_cache["models"]
+            and now - _model_cache["fetched_at"] < MODEL_CACHE_TTL):
+        return _model_cache["models"]
+
+    result = await _rpc_call("model/list", {"limit": 50}, timeout)
+    if not result.get("ok"):
+        log.warning(f"[codex_models] fetch failed: {result.get('message')}")
+        return _model_cache["models"] or []
+
+    models = []
+    for item in result["data"].get("data", []):
+        if item.get("hidden"):
+            continue
+        model_id = item.get("model") or item.get("id")
+        if model_id:
+            models.append(model_id)
+
+    if models:
+        _model_cache["models"] = models
+        _model_cache["fetched_at"] = now
+    return models
