@@ -490,8 +490,8 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             live_models = []
             default_model = ""
         default_label = f"默认 ({default_model})" if default_model else "默认 (CLI 配置)"
-        current_model = session_data.get("codex_model") or CODEX_MODEL or default_label
-        available = [default_label] + (live_models or CODEX_MODELS)
+        current_model = session_data.get("codex_model") or CODEX_MODEL or default_model or default_label
+        available = live_models or CODEX_MODELS
         panel_card = CardBuilder.build_model_panel(available, current_model)
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, panel_card))
         return True, user_text
