@@ -104,7 +104,7 @@ async def execute_codex(
     except Exception as e:
         log.error(f"Failed to send typing card: {e}")
 
-    replies, errors = [], []
+    replies, errors, stdout_errors = [], [], []
     latest_action = ""
     last_progress_time = time.time()
     last_stdout_size = 0
@@ -121,7 +121,11 @@ async def execute_codex(
                 event = json.loads(raw.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
-            if event.get("type") == "thread.started" and event.get("thread_id"):
+            event_type = event.get("type", "")
+            if event_type == "error" or event.get("error"):
+                err_msg = event.get("message") or event.get("error", {}).get("message") or str(event)
+                stdout_errors.append(err_msg)
+            if event_type == "thread.started" and event.get("thread_id"):
                 thread_id = event["thread_id"]
                 session_data["codex_conversation"] = thread_id
                 try:
@@ -220,7 +224,10 @@ async def execute_codex(
         failed = True
         reply = "⏰ 任务执行超过 30 分钟已被强制终止。请拆分任务或使用 /stop 后重试。"
     elif failed:
-        reply = "".join(errors).strip() or "Codex did not produce a response. Check Codex authentication and bot logs."
+        all_errors = "".join(errors).strip()
+        if stdout_errors:
+            all_errors += "\n" + "\n".join(stdout_errors)
+        reply = all_errors or "Codex did not produce a response. Check Codex authentication and bot logs."
     else:
         allowed_dirs = [path for path in (cwd, session_data.get("workspace_root")) if path]
         try:
