@@ -69,6 +69,7 @@ if [ ! -f "main.py" ]; then
         echo "⬇️ 正在从 GitHub 克隆项目..."
         git clone "$REPO_URL" "$PROJECT_DIR"
     fi
+    cd "$PROJECT_DIR"
     if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         echo "⬇️ 正在拉取最新代码..."
         git pull origin main || true
