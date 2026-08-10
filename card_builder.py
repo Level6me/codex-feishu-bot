@@ -184,6 +184,9 @@ class CardBuilder:
         title, content = CardBuilder._guess_intent(user_text)
         
         # Override the text with the actual tool action
+        tool_action = re.sub(r"[\r\n`]+", " ", str(tool_action or "")).strip()
+        if len(tool_action) > 30:
+            tool_action = tool_action[:30] + "…"
         time_hint = f"已运行 {think_seconds}s" if think_seconds > 0 else "请稍候..."
         content = f"**当前动作：** `{tool_action}`\n\n*(AI 正在运行底层命令或操作文件，{time_hint})*"
         
@@ -1276,4 +1279,3 @@ class CardBuilder:
             },
             "elements": elements
         }
-
