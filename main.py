@@ -803,6 +803,17 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
             asyncio.run_coroutine_threadsafe(do_set_workspace_prompt(), main_loop)
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复路径以设置开发工作区！"}})
 
+    elif action_value.get("action") == "set_workspace_root_prompt":
+        if main_loop and main_loop.is_running():
+            async def do_set_workspace_root_prompt():
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = "workspace_root"
+                await save_session_async(chat_id, session_data)
+                prompt_msg = "⚙️ **请直接回复一个路径以设置公共项目根目录**：\n\n*(支持 `~` 开头的路径，例如：`~/projects`；路径必须已存在且为目录，后续新建项目与列表面板将绑定至此根目录)*"
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, prompt_msg))
+            asyncio.run_coroutine_threadsafe(do_set_workspace_root_prompt(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复路径以设置公共项目根目录！"}})
+
     elif action_value.get("action") == "add_note_prompt":
         if main_loop and main_loop.is_running():
             async def do_add_note_prompt():
