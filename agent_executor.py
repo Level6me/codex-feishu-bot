@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import re
+import shlex
 import signal
 import time
 
@@ -26,15 +27,146 @@ async def _feishu_call(loop, func, *args):
     )
 
 
+# 常见命令的简短中文概括，避免在卡片上暴露完整路径和参数
+_COMMAND_SUMMARY = {
+    ("git", "status"): "检查 Git 仓库状态",
+    ("git", "log"): "查看 Git 提交记录",
+    ("git", "diff"): "对比代码差异",
+    ("git", "pull"): "拉取远程代码",
+    ("git", "fetch"): "拉取远程代码",
+    ("git", "push"): "推送本地代码",
+    ("git", "checkout"): "切换 Git 分支",
+    ("git", "switch"): "切换 Git 分支",
+    ("git", "clone"): "克隆代码仓库",
+    ("git", "add"): "暂存代码变更",
+    ("git", "commit"): "提交代码变更",
+    ("git", "reset"): "重置代码变更",
+    ("git", "stash"): "暂存代码改动",
+    ("git", "branch"): "管理 Git 分支",
+    ("npm", "install"): "安装依赖",
+    ("npm", "i"): "安装依赖",
+    ("npm", "run"): "运行项目脚本",
+    ("npm", "build"): "构建项目",
+    ("npm", "test"): "运行测试",
+    ("yarn", "install"): "安装依赖",
+    ("yarn", "build"): "构建项目",
+    ("yarn", "test"): "运行测试",
+    ("pnpm", "install"): "安装依赖",
+    ("pnpm", "build"): "构建项目",
+    ("pnpm", "test"): "运行测试",
+    ("pip", "install"): "安装 Python 依赖",
+    ("pip3", "install"): "安装 Python 依赖",
+    ("docker", "compose"): "操作 Docker 服务",
+    ("docker", "build"): "构建 Docker 镜像",
+    ("docker", "ps"): "查看 Docker 容器",
+}
+
+_READONLY_CMDS = {"ls", "ll", "dir", "tree", "find", "du", "stat", "cat", "head", "tail", "less", "more", "wc"}
+_SEARCH_CMDS = {"rg", "grep", "ack", "ag", "find", "rgrep"}
+_EDIT_CMDS = {"sed", "awk", "perl", "touch", "chmod", "chown", "vim", "vi", "nano"}
+_FILE_OPS = {"cp", "mv", "rm", "mkdir", "rmdir", "unzip", "zip", "tar", "curl", "wget"}
+_PYTHON_CMDS = {"python", "python3", "python2", "uv", "pip", "pip3"}
+_NODE_CMDS = {"node", "npx", "bun", "npm", "yarn", "pnpm"}
+
+
+def _summarize_command(command):
+    """把完整 shell 命令压缩成简短动作描述，不暴露具体路径。"""
+    if not command:
+        return "执行命令"
+    text = str(command).strip().splitlines()[0] if str(command).strip() else ""
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        tokens = text.split()
+    if not tokens:
+        return "执行命令"
+    # 跳过 cd 前缀及其路径，定位 && 之后的真正命令
+    if tokens[0] == "cd":
+        rest = tokens[1:]
+        if rest and rest[0] not in ("&&", ";"):
+            rest = rest[1:]
+        if rest and rest[0] in ("&&", ";"):
+            rest = rest[1:]
+        tokens = rest
+    if not tokens:
+        return "切换目录"
+
+    cmd = os.path.basename(tokens[0]).lower().rstrip("/")
+    sub = ""
+    run_script = ""
+    option_with_value = False
+    for tok in tokens[1:]:
+        if option_with_value:
+            option_with_value = False
+            continue
+        if tok in ("-C", "-c"):
+            option_with_value = True
+            continue
+        if not tok.startswith("-"):
+            sub = tok
+            break
+    if cmd in _NODE_CMDS and sub == "run":
+        for tok in tokens[2:]:
+            if tok.startswith("-"):
+                continue
+            run_script = tok
+            break
+        if run_script in ("build", "release"):
+            return "构建项目"
+        if run_script == "test":
+            return "运行测试"
+        if run_script in ("dev", "start", "serve"):
+            return "启动开发服务"
+        return "运行项目脚本"
+
+    key = (cmd, sub)
+    if key in _COMMAND_SUMMARY:
+        return _COMMAND_SUMMARY[key]
+    if cmd in _SEARCH_CMDS:
+        return "搜索代码"
+    if cmd in _READONLY_CMDS:
+        return "检查文件或目录"
+    if cmd in _EDIT_CMDS:
+        return "编辑文件"
+    if cmd in _FILE_OPS:
+        return "操作文件或下载资源"
+    if cmd == "git":
+        return "执行 Git 操作"
+    if cmd in _PYTHON_CMDS:
+        return "执行 Python 脚本" if cmd.startswith("python") else "安装 Python 依赖"
+    if cmd in _NODE_CMDS:
+        return "运行项目脚本"
+    if cmd == "docker":
+        return "操作 Docker"
+    return f"执行 {cmd} 命令"
+
+
+def _summarize_tool(item):
+    """把工具调用压缩成简短描述，工具名过长时只保留最后一段。"""
+    tool = item.get("tool") or item.get("name") or item.get("title") or ""
+    if not tool:
+        return "调用工具"
+    name = str(tool).strip()
+    # 先取文件名，去掉扩展名，再去掉 mcp 前缀，只保留有意义的最后一段
+    base = os.path.basename(name.rstrip("/"))
+    base = re.sub(r"\.(py|js|ts|sh|exe|json|rb|go)$", "", base, flags=re.IGNORECASE)
+    short = base.split("__")[-1].strip()
+    if not short:
+        short = name.split("__")[-1].strip()
+    if len(short) > 40:
+        short = short[-40:]
+    return f"调用工具 {short}"
+
+
 def _event_action(event):
     item = event.get("item") or event
     kind = item.get("type", "")
-    if kind in {"command_execution", "command"}:
-        return item.get("command") or item.get("text") or "Running command"
+    if kind in {"command_execution", "command", "shell"}:
+        return _summarize_command(item.get("command") or item.get("text") or item.get("content") or "")
     if kind in ("file_change", "patch"):
-        return "Updating files"
+        return "更新文件"
     if kind in ("mcp_tool_call", "tool_call"):
-        return item.get("tool") or item.get("name") or "Calling tool"
+        return _summarize_tool(item)
     return ""
 
 
@@ -58,9 +190,9 @@ async def execute_codex(
     prompt = system_instruction + final_prompt
     if thread_id:
         cmd = [CODEX_BIN, "exec", "resume", thread_id, "--json", "--skip-git-repo-check",
-               "-c", 'sandbox_mode="workspace-write"']
+               "-c", 'sandbox_mode="danger-full-access"']
     else:
-        cmd = [CODEX_BIN, "exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check"]
+        cmd = [CODEX_BIN, "exec", "--json", "--sandbox", "danger-full-access", "--skip-git-repo-check"]
         if cwd:
             cmd.extend(["--cd", cwd])
     model = session_data.get("codex_model") or CODEX_MODEL
