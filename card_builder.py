@@ -2,6 +2,7 @@ import re
 import os
 from datetime import datetime
 from config import WORKSPACE_ROOT
+from logger import log
 
 class CardBuilder:
     @staticmethod
@@ -337,8 +338,11 @@ class CardBuilder:
     @staticmethod
     def build_dir_browser_card(active_project_path, recent_projects=None, recent_page=1, workspace_root=None, ignored_projects=None):
         elements = []
+
+        # 确定公共根目录
+        proj_root = workspace_root if workspace_root else WORKSPACE_ROOT
         
-        # 1. 顶部当前活跃项目展示（附带设置按钮）
+        # 1. 顶部公共项目根目录展示（附带设置按钮）
         elements.append({
             "tag": "column_set",
             "flex_mode": "none",
@@ -351,7 +355,7 @@ class CardBuilder:
                     "elements": [
                         {
                             "tag": "markdown",
-                            "content": f"📂 **当前活跃开发工作区**：\n`{active_project_path}`"
+                            "content": f"⚙️ **当前公共项目根目录**：\n`{proj_root}`"
                         }
                     ]
                 },
@@ -365,22 +369,20 @@ class CardBuilder:
                             "text": {"tag": "plain_text", "content": "⚙️ 设置"},
                             "type": "default",
                             "size": "small",
-                            "value": {"action": "set_workspace_prompt"}
+                            "value": {"action": "set_workspace_root_prompt"}
                         }
                     ]
                 }
             ]
         })
         
-        # 确定公共根目录
-        proj_root = workspace_root if workspace_root else WORKSPACE_ROOT
-        
+        # 2. 当前活跃开发工作区展示（无设置按钮）
         elements.append({
             "tag": "markdown",
-            "content": f"⚙️ **当前公共项目根目录**：\n`{proj_root}`"
+            "content": f"📂 **当前活跃开发工作区**：\n`{active_project_path}`"
         })
         
-        # 2. 新建项目动作行
+        # 3. 新建项目动作行
         elements.append({
             "tag": "action",
             "actions": [

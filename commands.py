@@ -186,6 +186,17 @@ class PendingCommand(str, Enum):
     PROJECT = "project"
     CREATE_PROJECT = "create_project"
     NOTE_ADD = "note_add"
+    WORKSPACE_ROOT = "workspace_root"
+
+
+# 已知斜杠命令白名单：仅当用户输入命中时才清除 pending 状态，
+# 避免把绝对路径（/Users/...）误判为"新命令"导致路径设置失效。
+_SLASH_COMMANDS = {
+    "/help", "/model", "/card", "/menu", "/project", "/note", "/notes",
+    "/status", "/context", "/quota", "/clear", "/stop", "/update", "/ping",
+    "/remember", "/memory", "/forget", "/brain", "/newproj_resolve",
+}
+
 
 async def handle_slash_command(user_text, message_id, chat_id, session_data, running_processes, chat_queues, chat_workers=None):
     log.info(f"handle_slash_command call: user_text='{user_text}', pending_command='{session_data.get('pending_command')}'")
@@ -195,14 +206,17 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
     """
     
     pending_command = session_data.get("pending_command")
+
+    first_word = user_text.strip().split()[0] if user_text.strip() else ""
+    is_slash_cmd = first_word in _SLASH_COMMANDS
     
     # If the user typed a new slash command, clear any pending state
-    if user_text.startswith("/") and pending_command:
+    if is_slash_cmd and pending_command:
         session_data.pop("pending_command", None)
         await save_session_async(chat_id, session_data)
         pending_command = None
         
-    if not user_text.startswith("/") and pending_command:
+    if pending_command and not is_slash_cmd:
         if pending_command == PendingCommand.REMEMBER:
             memory_text = user_text.strip()
             memories = await get_profile_async(chat_id)
@@ -244,6 +258,28 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
                 reply_text = f"📂 已成功将当前开发工作区切换为：`{new_project}`"
             session_data.pop("pending_command", None)
             await save_session_async(chat_id, session_data)
+            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+            return True, user_text
+
+        elif pending_command == PendingCommand.WORKSPACE_ROOT:
+            target_path = user_text.strip()
+            if target_path.startswith("~"):
+                target_path = os.path.expanduser(target_path)
+            target_path = os.path.abspath(target_path)
+
+            if not os.path.exists(target_path):
+                session_data.pop("pending_command", None)
+                await save_session_async(chat_id, session_data)
+                reply_text = f"❌ **路径设置失败！**\n\n您输入的路径在系统上不存在，请核对拼写：\n`{target_path}`"
+            elif not os.path.isdir(target_path):
+                session_data.pop("pending_command", None)
+                await save_session_async(chat_id, session_data)
+                reply_text = f"❌ **路径设置失败！**\n\n您输入的路径不是一个合法目录：\n`{target_path}`"
+            else:
+                session_data["workspace_root"] = target_path
+                session_data.pop("pending_command", None)
+                await save_session_async(chat_id, session_data)
+                reply_text = f"⚙️ **公共项目根目录设置成功！**\n\n- 当前公共项目根目录：`{target_path}`\n- 后续新建项目与列表面板将绑定至此目录"
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
             return True, user_text
             
