@@ -124,8 +124,12 @@ class CronEngine:
         try:
             # 2. Prepare Session Context
             session_data = await get_session_async(chat_id)
+            # 定时任务使用独立会话副本 + 全新线程，避免 resume 用户会话线程
+            # 导致任务上下文注入用户对话 / 覆盖用户 codex_conversation
+            cron_session = dict(session_data)
+            cron_session["codex_conversation"] = ""
             if task.get('project_path'):
-                session_data['project'] = task['project_path']
+                cron_session['project'] = task['project_path']
 
             prompt = task.get('prompt', '')
 
@@ -139,7 +143,7 @@ class CronEngine:
                 user_text=prompt,
                 message_id=dummy_msg_id,
                 bot_reply_msg_id=None,
-                session_data=session_data,
+                session_data=cron_session,
                 is_new_conversation=False,
                 system_instruction="你是由 Cron 引擎调度的自动化定时任务。请按照用户预设的 Prompt 准确执行，并生成详尽专业的结构化分析报告。",
                 final_prompt=prompt,

@@ -187,6 +187,7 @@ async def execute_codex(
     project = session_data.get("project")
     cwd = project if project and project not in ("Default",) and os.path.isdir(project) else None
     thread_id = session_data.get("codex_conversation", "")
+    resumed_thread = bool(thread_id)
     prompt = system_instruction + final_prompt
     # 权限联动：管理员/未知角色保持完整沙箱；普通用户强制受限工作区沙箱
     sandbox = "danger-full-access" if role == "admin" else "workspace-write"
@@ -243,6 +244,7 @@ async def execute_codex(
 
     replies, errors, stdout_errors = [], [], []
     latest_action = ""
+    thread_broken = False
     last_progress_time = time.time()
     last_stdout_size = 0
     started = time.time()
@@ -250,7 +252,7 @@ async def execute_codex(
     next_patch_time = 0.0
 
     async def consume_stdout():
-        nonlocal latest_action, thread_id, last_progress_time, last_stdout_size
+        nonlocal latest_action, thread_id, last_progress_time, last_stdout_size, thread_broken
         while raw := await process.stdout.readline():
             last_stdout_size += len(raw)
             last_progress_time = time.time()
@@ -262,13 +264,16 @@ async def execute_codex(
             if event_type == "error" or event.get("error"):
                 err_msg = event.get("message") or event.get("error", {}).get("message") or str(event)
                 stdout_errors.append(err_msg)
+                if "No tool output found" in str(err_msg) or "invalid_request_error" in str(err_msg):
+                    thread_broken = True
             if event_type == "thread.started" and event.get("thread_id"):
                 thread_id = event["thread_id"]
-                session_data["codex_conversation"] = thread_id
-                try:
-                    await asyncio.wait_for(save_session_async(chat_id, session_data), timeout=SAVE_TIMEOUT)
-                except Exception as e:
-                    log.warning(f"save_session timed out or failed: {e}")
+                if not silent:
+                    session_data["codex_conversation"] = thread_id
+                    try:
+                        await asyncio.wait_for(save_session_async(chat_id, session_data), timeout=SAVE_TIMEOUT)
+                    except Exception as e:
+                        log.warning(f"save_session timed out or failed: {e}")
             if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
                 usage = event["usage"]
                 ctx = session_data.get("context_usage") or {}
@@ -280,10 +285,11 @@ async def execute_codex(
                 ctx["turns"] = ctx.get("turns", 0) + 1
                 ctx["model"] = model or "默认"
                 session_data["context_usage"] = ctx
-                try:
-                    await asyncio.wait_for(save_session_async(chat_id, session_data), timeout=SAVE_TIMEOUT)
-                except Exception as e:
-                    log.warning(f"save_session timed out or failed: {e}")
+                if not silent:
+                    try:
+                        await asyncio.wait_for(save_session_async(chat_id, session_data), timeout=SAVE_TIMEOUT)
+                    except Exception as e:
+                        log.warning(f"save_session timed out or failed: {e}")
             text = _agent_text(event)
             if text:
                 replies.append(text)
@@ -356,6 +362,23 @@ async def execute_codex(
 
     reply = "\n\n".join(part.strip() for part in replies if part.strip()).strip()
     failed = process.returncode != 0 or not reply
+
+    # 会话线程损坏（工具调用输出丢失）时，清空会话并新建线程重试一次，避免每次消息都失败
+    if thread_broken and resumed_thread:
+        log.warning(
+            f"Thread {thread_id} corrupted (missing tool output), clearing conversation and retrying with a fresh thread"
+        )
+        session_data["codex_conversation"] = ""
+        try:
+            await asyncio.wait_for(save_session_async(chat_id, session_data), timeout=SAVE_TIMEOUT)
+        except Exception as e:
+            log.warning(f"save_session failed while clearing corrupted thread: {e}")
+        return await execute_codex(
+            chat_id, user_text, message_id, bot_reply_msg_id, session_data,
+            is_new_conversation, system_instruction, final_prompt, downloaded_file_name,
+            download_success, running_processes, image_paths=image_paths, role=role, silent=silent,
+        )
+
     if stalled:
         failed = True
         reply = f"⚠️ 任务已 {STALL_TIMEOUT} 秒无任何进展（无 stdout 输出、无工具动作变化），疑似内部死锁，已强制终止。请拆分任务或 /stop 后重试。"
