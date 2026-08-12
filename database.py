@@ -6,7 +6,7 @@ import asyncio
 import aiosqlite
 from logger import log
 
-DB_FILE = "codex_bot.db"
+DB_FILE = os.getenv("DB_FILE", "codex_bot.db")
 
 def get_db():
     conn = sqlite3.connect(DB_FILE)

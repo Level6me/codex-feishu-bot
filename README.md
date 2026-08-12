@@ -126,6 +126,25 @@ pm2 restart codex-feishu-bot
 pm2 stop codex-feishu-bot
 ```
 
+### 容器部署（Docker）
+```bash
+# 1. 准备环境变量（飞书凭证等）
+cp .env.example .env && vi .env
+
+# 2. 确保 Codex CLI 登录态挂载目录存在（登录过 codex 即存在）
+ls ~/.codex
+
+# 3. 启动（自动构建镜像；数据目录 data/ 与 downloads/ 自动创建）
+docker compose up -d --build
+
+# 4. 查看日志 / 停止
+docker compose logs -f
+docker compose down
+```
+
+> 说明：镜像内运行 `python3 main.py`，DB 持久化在宿主 `./data/`（通过 `DB_FILE` 环境变量），
+> 媒体下载在 `./downloads/`，Codex 登录态 `~/.codex` 只读挂载进容器。
+
 ---
 
 ## ⚙️ 配置项（.env）

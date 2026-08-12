@@ -129,9 +129,18 @@
 
 ## 阶段 6：工程化对齐
 
-- Docker/compose 对齐上游双服务形态（不需要 agy-daemon 则只对齐镜像基础）
-- `.env.example`、README、CHANGELOG 同步
-- 停滞检测已对齐（600 秒 + stderr + custom_tool_call），无需再动
+### ✅ 已完成（2026-08-12）
+
+| 动作 | 结果 |
+|---|---|
+| Dockerfile 对齐 | ✅ node 基础镜像 + python 依赖 + codex CLI，时区 Asia/Shanghai，`CMD python3 main.py` |
+| docker-compose 对齐 | ✅ 单服务（无需 agy-daemon）；去掉废弃 version 字段；DB/下载数据目录挂载持久化 |
+| `.dockerignore` | ✅ 新增，排除 venv/.git/.env/logs/db/缓存等 |
+| DB 路径可配置 | ✅ `DB_FILE` 环境变量（默认 `codex_bot.db`，本机行为不变） |
+| 文档同步 | ✅ `.env.example`、README（含 Docker 部署小节）、CHANGELOG 均已同步 |
+| 停滞检测 | ✅ 600 秒 + stderr + custom_tool_call，已对齐无需再动 |
+
+> 说明：本机无 Docker 环境，未做镜像实际构建；compose 结构已静态核对，构建命令见 README。
 
 ---
 
