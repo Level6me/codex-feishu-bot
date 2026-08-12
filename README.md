@@ -206,6 +206,23 @@ docker compose down
 
 ---
 
+## 🧪 自动化测试
+
+内置 unittest 测试套件（零第三方依赖），覆盖：系统命令、插件、卡片按钮分发、
+卡片构建快照（38 方法基线对比）、执行器修复（线程自愈/定时任务隔离）、`/stop` 中断、定时任务生命周期。
+
+```bash
+cd codex-feishu-bot
+venv/bin/python3 -m unittest discover -s tests -v
+```
+
+> 所有测试 mock 飞书发送 / Codex CLI 子进程 / git fetch；数据库通过 `DB_FILE`
+> 环境变量隔离到临时目录，**不会触碰真实 `codex_bot.db`**。
+> 卡片基线位于 `tests/baseline/cards_baseline.json`，卡片输出变更时用
+> `python3 -m tests.test_cards_snapshot --gen` 重新生成后人工确认再提交。
+
+---
+
 ## 📋 功能冻结与回归
 
 - 冻结基线标签：`v1.0-freeze-base`
