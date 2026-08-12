@@ -96,6 +96,24 @@ def patch_lark():
     lark_client.patch_interactive_card_sdk = lambda m, c: patched_cards.append((m, c)) or True
     lark_client.send_card_to_chat_sdk = lambda c, card: None
     lark_client.send_text_to_chat_sdk = lambda c, t: None
+    lark_client.send_card_to_chat_async = lambda c, card: _coro_append_card(card)
+    lark_client.send_text_to_chat_async = lambda c, t: _coro_append_text(t)
+    lark_client.get_chat_name_async = lambda c: _coro_str()
+    lark_client.get_user_name_async = lambda u: _coro_str()
+
+
+async def _coro_append_card(card):
+    sent_cards.append(card)
+    return True
+
+
+async def _coro_append_text(text):
+    sent_texts.append(text)
+    return True
+
+
+async def _coro_str():
+    return ""
 
 
 def patch_codex_rpc():
@@ -121,10 +139,25 @@ def patch_auth():
     """把权限函数替换为管理员视角。"""
     import utils.auth
 
-    utils.auth.get_role = lambda chat_id: "admin"
+    for name in ("get_role", "get_admin_chat_id", "set_session_role", "start_display_name_refresh"):
+        if name not in _AUTH_ORIGINALS:
+            _AUTH_ORIGINALS[name] = getattr(utils.auth, name)
+
+    utils.auth.get_role = lambda chat_id, sender_open_id="": "admin"
     utils.auth.get_admin_chat_id = lambda: "oc_admin"
     utils.auth.set_session_role = lambda *a, **k: None
     utils.auth.start_display_name_refresh = lambda s: _coro_none()
+
+
+_AUTH_ORIGINALS = {}
+
+
+def restore_auth():
+    """恢复被 patch_auth 覆盖的真实权限函数（需要真实角色逻辑的测试用）。"""
+    import utils.auth
+
+    for name, fn in _AUTH_ORIGINALS.items():
+        setattr(utils.auth, name, fn)
 
 
 async def _coro_none():
