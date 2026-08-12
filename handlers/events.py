@@ -1,6 +1,7 @@
 """飞书 WS 事件入口与卡片动作分发（阶段 5 重构：自 main.py 抽出）。"""
 import asyncio
 import json
+import time
 
 import app_state
 from card_builder import CardBuilder, TIER_LABELS
@@ -43,7 +44,8 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     if data.event.sender and data.event.sender.sender_id:
         sender_open_id = data.event.sender.sender_id.open_id or ""
 
-    if not app_state._mark_seen(message_id):
+    create_time = getattr(data.event.message, "create_time", None) or int(time.time())
+    if not app_state._mark_seen(message_id, chat_id, create_time):
         log.warning(f"Duplicate message ignored: message_id={message_id}")
         return
 

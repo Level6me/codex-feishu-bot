@@ -171,6 +171,15 @@ pm2 restart codex-feishu-bot
 pm2 stop codex-feishu-bot
 ```
 
+### 向飞书会话发送文件
+```bash
+# 自动定位最近活跃会话，把本地文件（文档/图片/压缩包等）发到飞书
+venv/bin/python3 send_to_feishu.py docs/FLIGHT_CHECK.md
+
+# 指定会话并附带说明文字
+venv/bin/python3 send_to_feishu.py report.pdf oc_xxxx --caption "这是验收报告"
+```
+
 ### 容器部署（Docker）
 ```bash
 # 1. 准备环境变量（飞书凭证等）

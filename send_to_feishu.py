@@ -37,6 +37,24 @@ def resolve_default_chat_id():
         return None
 
 
+def send_file(file_path, chat_id=None, caption=None):
+    """发送本地文件到会话；chat_id 省略时自动定位最近活跃会话。
+
+    返回 (ok, message)。
+    """
+    if not os.path.isfile(file_path):
+        return False, f"文件不存在: {file_path}"
+
+    chat_id = chat_id or resolve_default_chat_id()
+    if not chat_id:
+        return False, "未找到目标会话，请显式传入 chat_id"
+
+    ok = send_local_file_to_chat(chat_id, file_path, caption=caption)
+    if ok:
+        return True, f"✅ 已发送 {file_path} -> {chat_id}"
+    return False, f"❌ 发送失败: {file_path} -> {chat_id}"
+
+
 def main():
     parser = argparse.ArgumentParser(description="把本地文件通过飞书 API 发送到会话")
     parser.add_argument("file_path", help="要发送的本地文件路径")
@@ -44,21 +62,9 @@ def main():
     parser.add_argument("--caption", default=None, help="可选：文件附带说明文字")
     args = parser.parse_args()
 
-    if not os.path.isfile(args.file_path):
-        print(f"[send_to_feishu] 文件不存在: {args.file_path}")
-        sys.exit(1)
-
-    chat_id = args.chat_id or resolve_default_chat_id()
-    if not chat_id:
-        print("[send_to_feishu] 未找到目标会话，请显式传入 chat_id")
-        sys.exit(1)
-
-    ok = send_local_file_to_chat(chat_id, args.file_path, caption=args.caption)
-    if ok:
-        print(f"[send_to_feishu] ✅ 已发送 {args.file_path} -> {chat_id}")
-        sys.exit(0)
-    print(f"[send_to_feishu] ❌ 发送失败: {args.file_path} -> {chat_id}")
-    sys.exit(1)
+    ok, msg = send_file(args.file_path, args.chat_id, args.caption)
+    print(f"[send_to_feishu] {msg}")
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":
