@@ -43,7 +43,8 @@ find_python() {
     return 1
 }
 
-# 将 .env.example 中出现而 .env 缺失的字段以空值补齐（不覆盖已有值）
+# 将 .env.example 中出现而 .env 缺失的字段补齐（不覆盖已有值）。
+# 默认值直接取自 .env.example（布尔字段为 true 等），避免空值导致配置解析失败。
 ensure_env_fields() {
     [ -f .env.example ] || return 0
     [ -f .env ] || return 0
@@ -51,12 +52,13 @@ ensure_env_fields() {
     while IFS= read -r key; do
         [ -z "$key" ] && continue
         if ! grep -q "^${key}=" .env; then
-            echo "# ${key}=（新增字段，请按需填写）" >> .env
-            echo "${key}=" >> .env
+            default="$(sed -n "s/^${key}=//p" .env.example | tail -n 1)"
+            echo "# ${key}（新增字段，默认值来自 .env.example，请按需调整）" >> .env
+            echo "${key}=${default}" >> .env
             missing=1
         fi
     done < <(grep -E '^[A-Z][A-Z0-9_]*=' .env.example | sed 's/=.*//')
-    [ "$missing" = "1" ] && echo "✅ .env 已补充缺失字段（值为空，请按需填写）。"
+    [ "$missing" = "1" ] && echo "✅ .env 已补充缺失字段（默认值来自 .env.example，请按需调整）。"
 }
 
 # ---------- 0. 子命令（update / uninstall） ----------

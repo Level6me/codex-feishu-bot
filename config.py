@@ -3,7 +3,7 @@ import sys
 import shutil
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -31,6 +31,15 @@ class Settings(BaseSettings):
         alias="CODEX_MODELS",
     )
     git_mirror_url: str = Field(default="", alias="GIT_MIRROR_URL")
+
+    @field_validator("dangerously_skip_permissions", "auth_bootstrap_allow_group", mode="before")
+    @classmethod
+    def _empty_bool_as_default(cls, v):
+        # 兼容 .env 中布尔字段为空白值（如 KEY=）的情况：按字段默认值 true 处理，
+        # 避免 pydantic 无法解析空字符串导致进程启动即崩。
+        if isinstance(v, str) and v.strip() == "":
+            return True
+        return v
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),
@@ -66,4 +75,4 @@ DANGEROUSLY_SKIP_PERMISSIONS = settings.dangerously_skip_permissions
 AUTH_BOOTSTRAP_ALLOW_GROUP = settings.auth_bootstrap_allow_group
 
 # --- Workspace & Project Directory Configuration ---
-WORKSPACE_ROOT = settings.workspace_root
+WORKSPACE_ROOT = settings.workspace_root.strip() or os.path.expanduser("~")
