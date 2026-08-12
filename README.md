@@ -1,6 +1,8 @@
 # Codex Feishu Bot
 
-这是一个基于飞书原生 WebSocket 接口和本地 Codex CLI 深度结合的智能助手项目。该项目旨在将大语言模型的代码辅助和系统操作能力接入到飞书聊天窗口中，提供全天候的远程开发辅助与自动化支持。
+基于**飞书原生 WebSocket 长连接**与**本地 Codex CLI** 深度结合的智能助手。把大模型的代码辅助、系统操作、定时任务与插件能力接入飞书聊天窗口，提供全天候的远程开发与自动化支持。
+
+> 当前基线：`v1.0-freeze-base`（2026-08-12 功能冻结）。已包含权限体系、定时任务、插件框架、AI 记忆、备忘录、服务器巡检、OTA 热升级等完整能力。
 
 ---
 
@@ -16,117 +18,163 @@
 
 ---
 
-## 🌟 核心功能清单
+## 🌟 核心功能
 
-本项目通过纯 Python 原生架构实现了与飞书和底层操作系统的深度交互，主要功能包括：
+### 一、对话与多模态
+- **流式状态卡片**：基于飞书 Interactive Card，Token 防抖队列平滑刷新，实时展示 `📥 资源加载中...`、`🛠️ 当前动作：执行命令`、`✨ AI 思考中...`。
+- **文档解析**：Word / PDF / TXT / Markdown 自动下载并提取文本供模型分析。
+- **图片视觉**：图片/截图可直接理解画面内容或识别代码。
+- **音视频处理**：`.mp4` / `.mov` / `.ogg` 等音视频自动提取内容特征与摘要。
+- **生成物回传**：模型生成的代码文件/图表自动作为飞书附件回传。
+- **原生互动按钮**：模型需要确认时，自动在卡片渲染按钮（`CHOICE_CARD`），点击即可完成选择。
+- **多图防抖合流**：连续多张图片自动合并为一次分析，避免碎片化消耗。
 
-### 一、 交互与基础体验
-1. **流式交互与状态卡片**：基于飞书 Interactive Card 实现。采用 Token 防抖队列（1.0s 刷新间隔）实现平滑的流式打字机效果。在处理耗时任务时（如大文件下载、执行代码），会自动流转卡片状态（如 `📥 资源加载中...`、`🛠️ 当前动作：执行命令`、`✨ AI 思考中...`）。
-2. **多模态文件解析**：
-   * **文档读取**：支持直接在飞书中发送 Word / PDF / TXT / Markdown 文件，程序会自动在本地下载并提取文本供模型分析。
-   * **图片视觉识别**：支持发送图片和截图，模型可直接理解画面内容或识别图片中的代码。
-   * **音视频处理**：支持发送 `.mp4` / `.mov` / `.ogg` 等音视频文件，程序会自动调用底层接口提取内容特征和摘要信息。
-3. **原生互动按钮**：当模型需要向用户确认选项时，会自动在飞书卡片底部渲染原生按钮，用户点击即可完成选择。
+### 二、权限与安全（v3）
+- **管理员引导**：首个会话（私聊或群聊，见 `AUTH_BOOTSTRAP_ALLOW_GROUP`）自动绑定为管理员。
+- **完整角色体系**：`admin / user / guest / banned` + 授权作用域（basic / dev / full）。
+- **未授权静默**：未授权会话仅可发送 `/auth` 申请，不会触发 AI 调用。
+- **限流**：普通用户消息频率限制（默认 5 条/分钟）。
+- **沙箱联动**：管理员任务 `danger-full-access`，普通用户强制 `workspace-write` 受限沙箱。
+- **命令管理**：`/user` 面板支持授权 / 撤销 / 拉黑 / 提升 / 降级 / 重新绑定管理员。
 
-### 二、 深入操作系统的本地执行引擎
-由于本服务直接部署在用户的物理机或服务器上，它拥有直接操作宿主机的能力：
-1. **本地文件读写**：模型可以通过飞书对话直接读取、修改或创建宿主机上的代码文件和配置文件。
-2. **终端指令执行**：支持大模型在宿主机上自主运行 Shell 命令（如 `npm run build`, `git clone`, `pm2 restart` 等），并将执行日志和报错结果实时返回给飞书进行分析。
-3. **生成物自动回传**：模型在本地生成的数据文件或图表，会被底层的拦截器捕获并作为飞书附件自动发送至聊天窗口。
+### 三、定时任务（v3）
+- `/cron` / `/schedule` 打开计划任务中心：标准 Cron 表达式或秒级倒计时（如 `600s`、`10m`）。
+- 面板支持创建、启停、删除、立即触发；执行结果以报告卡片推送。
+- 定时任务使用**独立会话副本 + 全新线程**执行，不污染用户对话上下文。
 
-### 三、Codex 运行说明
-**本项目原生兼容现代主流的各类集成开发环境，尤其完美适配各大 AI 厂商推出的次世代 IDE。**
-* **默认后端**：OpenAI Codex CLI。默认使用 Codex CLI 后端。
-* **协同原理**：本机器人并非作为插件挂载在特定的编辑器上，而是直接对**操作系统底层的文件系统（File System）**进行读写。当你通过手机飞书向机器人下达修改代码的指令时，机器人会在后台直接修改目标源码文件。上述提到的所有现代 IDE 均内置了“文件监控（File Watcher）”和热重载功能。因此，当你在飞书中完成对话回到电脑前时，IDE 已经自动同步并加载了机器人修改后的最新代码。
+### 四、插件生态（v3）
+微内核插件框架，支持本地加载与 GitHub 在线安装（`/plugin` 面板）。内置 6 个插件：
 
-### 四、 核心控制台指令 (Slash Commands)
-在聊天框中输入以下指令，可快速调用系统级功能：
-* `/model`：弹出交互式模型切换面板，点击按钮即可在多个 Codex 模型间热切换（可通过 `CODEX_MODELS` 环境变量自定义候选列表）。
-* `/context`：查看当前会话的上下文 Token 用量看板（最近一轮输入/缓存/输出、累计消耗与轮次统计）。
-* `/brain`：查看 Codex 全局记忆库（`~/.codex/AGENTS.md`）的当前内容。
-* `/project`：打开交互式工作区项目管理器，浏览并切换 Codex 的工作目录。
-* `/status`：查看机器人运行状态、版本信息与 Git 提交摘要。
-* `/role <身份>`：为当前对话设定专属的系统提示词（如 `/role 前端开发专家`）。
-* `/remember <喜好>`：永久记录用户的偏好设置（如 `/remember 默认使用 TypeScript`），数据保存在本地 SQLite 数据库中，跨越所有会话全局生效。
-* `/memory` / `/forget`：查看当前保存的所有长时偏好，或清空偏好记录。
-* `/update`：探测并对比云端 (GitHub) 最新版本，一键触发机器人的自动化热更新与重启（GitHub 不可达时自动回退到 `GIT_MIRROR_URL` 镜像源）。
-* `/clear`：清除当前对话的上下文记忆与 Token 统计，开启一个全新的干净会话。
-* `/stop`：强制中断。当后台正在执行耗时命令或代码生成时，发送此指令可立即终止任务，并一并清空当前在队列中积压的所有排队请求。
+| 插件 | 命令 | 能力 |
+|---|---|---|
+| 🧠 ai_memory | `/memory` | 长期偏好管理，对话前自动注入偏好上下文 |
+| ⏱️ cron_scheduler | `/cron` `/schedule` | 定时任务面板（由系统命令优先处理） |
+| 📝 notes_manager | `/note` `/notes` | 备忘录：添加 / 列表 / 详情 / 删除 / 清空 |
+| 🖥️ server_health | `/sysinfo` `/health` | CPU / 内存 / 磁盘 / 运行时长巡检卡片 |
+| 🍓 rpi_gpio_status | `/light` `/led` | 树莓派三色 LED 状态灯（非树莓派自动 Mock 降级） |
+| 🔄 system_updater | `/update` | OTA 检查与热升级（由系统命令优先处理） |
 
-### 五、 并发队列与升级管理
-1. **异步消息排队机制**：全面升级了并发处理机制。当后台任务正在深度执行时，如果连续收到新消息或高频点击事件，系统不再粗暴拒绝请求，而是将其无缝推入每个用户的独立异步队列 (`asyncio.Queue`) 中排队。当前任务结束后将自动执行下一条。
-2. **OTA 自我热升级 (Self-Updating)**：支持在飞书内直接输入 `/update` 自动探测云端的新版本。一键确认后，机器人将在后台自动拉取代码 (`git reset --hard`)、更新依赖 (`pip install`) 并通过 PM2 原地重启满血复活，实现维护成本归零。
-3. **SQLite 数据持久化**：所有的长时偏好记忆和对话上下文均存储在原生的 SQLite 数据库中，保证了高并发读写的数据安全性。
+### 五、本地执行引擎与运维
+- **宿主机操作**：模型可直接读写宿主机文件、执行 Shell 命令（`npm run build`、`git clone`、`pm2 restart` 等），日志实时回流飞书。
+- **OTA 热升级**：`/update` 探测云端版本，`/update confirm` 自动拉取代码、更新依赖并经 PM2 原地重启。
+- **优雅停机**：捕获 `SIGINT/SIGTERM`，重启前自动清理大模型子进程与排队任务。
+- **会话线程自愈**：检测到 Codex 会话线程损坏（工具输出丢失）时自动清空会话并以新线程重试一次。
 
 ---
 
-## 🚀 安装部署指南
+## ⌨️ 命令速查
 
-本项目采用无 Node.js 依赖的纯 Python 原生架构，支持通过 PM2 进行守护进程部署。
+| 命令 | 说明 |
+|---|---|
+| `/help` | 帮助菜单（卡片按钮） |
+| `/model` | 模型切换面板（`CODEX_MODELS` 自定义候选） |
+| `/context` | 上下文 Token 用量看板 |
+| `/quota` | Codex 官方订阅额度与账号查询 |
+| `/brain` | 查看全局记忆库（`~/.codex/AGENTS.md`） |
+| `/project` | 工作区项目浏览器：切换目录 / 设定公共根目录 / 新建项目 |
+| `/status` | 系统状态：CPU / 内存 / 版本 / Git 摘要 |
+| `/clear` | 清空当前会话上下文与 Token 统计 |
+| `/stop` | 强制中断当前任务并清空排队请求 |
+| `/auth` | 授权申请（未授权会话） |
+| `/user` | 权限管理面板与子命令（grant / revoke / ban / promote / demote / reset-admin） |
+| `/cron` `/schedule` | 定时任务中心 |
+| `/plugin` `/plugins` | 插件中心与商店 |
+| `/note` `/notes` | 备忘录（`/note add <内容>`、`/note del <编号>`、`/note clear`） |
+| `/memory` | 长期偏好记忆管理 |
+| `/ping` | 心跳自检 |
+| `/sysinfo` `/health` | 服务器巡检卡片 |
+| `/light` `/led` | 树莓派 GPIO 状态灯控制台 |
+| `/update` | 检查更新；`/update confirm` 热升级 |
 
-### 1. 系统要求与环境准备
-* **Python 3.10+**
-* **Node.js 和 npm** (仅用于安装 PM2：`npm install -g pm2`)
-* **Codex CLI**：确保 `codex` 已安装并完成登录。
+> 规则：**系统命令优先**，插件注册的同名命令作为兜底，不会重复处理。
 
-### 2. 单链接远程一键部署 (最推荐)
-本项目提供了一个高度自动化的安装脚本，支持在任意机器（甚至不需要提前 Clone 代码）直接通过一行命令完成项目克隆、环境变量配置、虚拟环境创建、依赖安装，并直接启动 PM2 守护进程。
+---
 
-只需在终端中运行以下命令：
+## 🚀 安装部署
+
+### 系统要求
+- Python 3.10+
+- Node.js 与 npm（仅用于安装 PM2）
+- Codex CLI（已安装并完成 `codex login`）
+
+### 一键部署（最推荐）
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/Level6me/codex-feishu-bot/main/install.sh)
 ```
-执行后，脚本会全自动拉取源码，您只需根据屏幕上的提示输入 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`，即可一键完成上线与开机自启配置！
+脚本自动克隆源码、引导填写飞书凭证、创建虚拟环境、安装依赖并启动 PM2 服务。
 
-### 3. 本地交互式部署
-如果您已经提前克隆了项目代码到本地，可以直接在项目根目录下运行：
+### 手动部署
 ```bash
-chmod +x install.sh
-./install.sh
-```
-执行后，只需根据提示输入凭证即可全自动完成部署。
+git clone https://github.com/Level6me/codex-feishu-bot.git
+cd codex-feishu-bot
 
-### 4. 手动部署 (可选)
-如果你希望手动控制部署流程，请按照以下步骤：
-
-**1) 下载与依赖配置**
-建议使用 Python 虚拟环境（venv）进行隔离部署：
-```bash
-# 进入项目目录并创建虚拟环境
 python3 -m venv venv
-
-# 激活虚拟环境 (Mac/Linux)
 source venv/bin/activate
-
-# 安装核心依赖包
 pip install -r requirements.txt
-```
 
-**2) 环境变量配置**
-```bash
 cp .env.example .env
-```
-编辑 `.env` 文件填入飞书开发者后台的真实凭证。
-> **注意**：请确保飞书应用已开启“WebSocket 建立长连接”权限，并开通了所有必需的事件与消息权限（如 `im:message`）。
+# 编辑 .env，填入 FEISHU_APP_ID / FEISHU_APP_SECRET 等配置
 
-**3) 启动后台服务**
-使用 PM2 启动机器人即可让其在后台稳定运行：
-```bash
-# 启动进程（请指定虚拟环境中的 python3 执行）
 pm2 start venv/bin/python3 --name "codex-feishu-bot" -- main.py
-
-# 保存 PM2 进程列表以支持开机自启
 pm2 save
 ```
 
-**常用运维指令：**
-* 查看实时日志：`pm2 logs codex-feishu-bot`
-* 重启服务：`pm2 restart codex-feishu-bot`
-* 停止服务：`pm2 stop codex-feishu-bot`
+### 常用运维
+```bash
+pm2 logs codex-feishu-bot   # 实时日志
+pm2 restart codex-feishu-bot
+pm2 stop codex-feishu-bot
+```
 
 ---
 
-## 👨‍💻 架构简介
-* **网络层**：使用 `lark_oapi.ws.Client` 与飞书网关建立稳定的全双工长连接，抛弃了传统的 Webhook 轮询，极大降低了延迟并穿透了内网限制。
-* **业务解耦**：项目划分为主轴（`main.py`）、指令路由（`commands.py`）、飞书接口封装（`lark_client.py`）、存储与配置层（`database.py` / `config.py`）以及多模态解析层（`multimodal.py`）。
-* **进程安全**：通过捕获 `SIGINT/SIGTERM` 信号，在 PM2 重启或停止服务时执行 Graceful Shutdown，自动清理正在运行的大模型子进程。绝对路径与 `sys.executable` 寻址机制保障了服务在各类复杂部署环境（如开机自启）下的稳定性。
+## ⚙️ 配置项（.env）
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | - | 飞书应用凭证（也兼容 `APP_ID` / `APP_SECRET`） |
+| `ALLOWED_USERS` / `ALLOWED_CHATS` | 空 | 白名单（逗号分隔），命中自动入册 dev 角色 |
+| `DANGEROUSLY_SKIP_PERMISSIONS` | `true` | 跳过权限门禁（单用户自部署）；多人环境请设为 `false` |
+| `AUTH_BOOTSTRAP_ALLOW_GROUP` | `true` | 允许首个群聊绑定管理员；`false` 时仅私聊可绑定 |
+| `AGENT_BACKEND` | `codex` | 后端类型 |
+| `CODEX_BIN` | `codex` | Codex 可执行文件路径 |
+| `CODEX_MODEL` | 空 | 默认模型覆盖（`--model` 参数） |
+| `CODEX_MODELS` | 官方默认列表 | `/model` 面板候选模型（逗号分隔） |
+| `WORKSPACE_ROOT` | `~` | 项目浏览器默认根目录 |
+| `GIT_MIRROR_URL` | 空 | OTA 更新第一备选镜像 |
+| `GITEE_MIRROR_URL` | 空 | OTA 更新第二备选镜像 |
+
+---
+
+## 🧱 项目结构
+
+```
+├── main.py               # 飞书 WS 入口、事件分发、队列与心跳
+├── agent_executor.py     # Codex CLI 适配：执行、流式卡片、线程自愈
+├── commands.py           # 系统斜杠命令路由
+├── card_builder.py       # 全部交互卡片构建
+├── lark_client.py        # 飞书 API 封装
+├── database.py           # SQLite 持久层（8 张表）
+├── config.py             # pydantic-settings 配置
+├── cron_engine.py        # 定时任务调度引擎
+├── plugin_manager.py     # 插件加载与分发
+├── plugin_base.py        # 插件基类
+├── plugin_store.py       # 在线插件源
+├── plugins/              # 6 个内置插件
+├── utils/                # auth（权限）、retry 等
+└── multimodal.py         # 多模态文件解析
+```
+
+## 💾 数据持久化
+全部状态存于本地 `codex_bot.db`（SQLite WAL 模式）：
+`chat_sessions`、`user_profiles`、`bot_meta`、`auth_sessions`、`pending_tasks`、`cron_tasks`、`cron_logs`、`recent_messages`。
+
+---
+
+## 📋 功能冻结与回归
+
+- 冻结基线标签：`v1.0-freeze-base`
+- 回归验收清单：见 [REGRESSION_CHECKLIST.md](REGRESSION_CHECKLIST.md)
+- 迁移与演进记录：见 [MIGRATION.md](MIGRATION.md) / [CHANGELOG.md](CHANGELOG.md)
+
+冻结期纪律：只修 bug、不加新功能；每次改动小步验证，全量回归通过后才允许上线。
