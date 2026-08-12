@@ -10,6 +10,11 @@ from config import ALLOWED_USERS, ALLOWED_CHATS
 from database import get_session_async, get_profile_async, save_session_async, save_profile_async
 from lark_client import send_reply_sdk, send_interactive_card_sdk, patch_interactive_card_sdk, send_card_to_chat_async
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
+try:
+    # lark-oapi >= 1.7 中消息事件模型位于 api/im/v1
+    from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
+except ImportError:  # lark-oapi < 1.7 的旧路径
+    from lark_oapi.event.callback.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
 from logger import log
 from utils.auth import (
     allow_message, get_admin_chat_id, get_auth_session, get_role,
