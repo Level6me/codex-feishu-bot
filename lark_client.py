@@ -1,0 +1,282 @@
+import json
+import os
+import tempfile
+import asyncio
+import lark_oapi as lark
+from lark_oapi.api.im.v1 import (
+    ReplyMessageRequest, ReplyMessageRequestBody, PatchMessageRequest,
+    PatchMessageRequestBody, GetMessageResourceRequest, CreateMessageReactionRequest,
+    CreateMessageReactionRequestBody, Emoji, DeleteMessageReactionRequest,
+    CreateMessageRequest, CreateMessageRequestBody, GetChatRequest,
+    CreateFileRequest, CreateFileRequestBody,
+)
+from lark_oapi.api.contact.v3 import GetUserRequest
+from config import APP_ID, APP_SECRET
+from logger import log
+from utils import with_retry
+
+api_client = lark.Client.builder().app_id(APP_ID).app_secret(APP_SECRET).timeout(10.0).build()
+
+@with_retry()
+def set_emoji_sdk(message_id, emoji_type):
+    try:
+        req = CreateMessageReactionRequest.builder() \
+            .message_id(message_id) \
+            .request_body(CreateMessageReactionRequestBody.builder() \
+                .reaction_type(Emoji.builder().emoji_type(emoji_type).build()) \
+                .build()) \
+            .build()
+        resp = api_client.im.v1.message_reaction.create(req)
+        if resp.code == 0:
+            return json.loads(resp.raw.content).get("data", {}).get("reaction_id")
+        else:
+            log.error(f"[set_emoji_sdk] Failed: {resp.msg}")
+            return None
+    except Exception as e:
+        log.error(f"[set_emoji_sdk] Error: {e}")
+        return None
+
+@with_retry()
+def delete_emoji_sdk(message_id, reaction_id):
+    if not reaction_id:
+        return
+    try:
+        req = DeleteMessageReactionRequest.builder() \
+            .message_id(message_id) \
+            .reaction_id(reaction_id) \
+            .build()
+        resp = api_client.im.v1.message_reaction.delete(req)
+        if resp.code != 0:
+            log.error(f"[delete_emoji_sdk] Failed: {resp.msg}")
+    except Exception as e:
+        log.error(f"[delete_emoji_sdk] Error: {e}")
+
+
+@with_retry()
+def send_reply_sdk(message_id, reply_text):
+    if len(reply_text) > 28000:
+        reply_text = reply_text[:28000] + "\n\n...(内容过长，已截断)"
+    req = ReplyMessageRequest.builder() \
+        .message_id(message_id) \
+        .request_body(ReplyMessageRequestBody.builder() \
+            .msg_type("text") \
+            .content(json.dumps({"text": reply_text})) \
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.reply(req)
+    if resp.code != 0:
+        log.error(f"[send_reply_sdk] Failed: {resp.msg}")
+
+@with_retry()
+def send_interactive_card_sdk(message_id, card_content):
+    req = ReplyMessageRequest.builder() \
+        .message_id(message_id) \
+        .request_body(ReplyMessageRequestBody.builder() \
+            .msg_type("interactive") \
+            .content(json.dumps(card_content)) \
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.reply(req)
+    if resp.code != 0:
+        log.error(f"[send_interactive_card_sdk] Failed: {resp.msg}")
+        return None
+    try:
+        return json.loads(resp.raw.content).get("data", {}).get("message_id")
+    except:
+        return None
+
+@with_retry()
+def patch_interactive_card_sdk(message_id, card_content):
+    req = PatchMessageRequest.builder() \
+        .message_id(message_id) \
+        .request_body(PatchMessageRequestBody.builder() \
+            .content(json.dumps(card_content)) \
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.patch(req)
+    if resp.code != 0:
+        log.error(f"[patch_interactive_card_sdk] Failed: {resp.msg}")
+
+@with_retry(max_retries=5, initial_delay=2.0)
+def download_message_resource_sdk(message_id, file_key, resource_type, output_path):
+    """
+    Downloads a message resource (image, file, audio, media) using the official SDK.
+    """
+    req = GetMessageResourceRequest.builder() \
+        .message_id(message_id) \
+        .file_key(file_key) \
+        .type(resource_type) \
+        .build()
+    
+    resp = api_client.im.v1.message_resource.get(req)
+    
+    if resp.code == 0:
+        try:
+            dir_name = os.path.dirname(output_path) or "."
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    while True:
+                        chunk = resp.file.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                os.replace(tmp_path, output_path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            return True
+        except Exception as e:
+            log.error(f"[download_message_resource_sdk] Error saving file: {e}")
+            return False
+    else:
+        log.error(f"[download_message_resource_sdk] Failed: {resp.msg}")
+        return False
+
+
+@with_retry()
+def send_card_to_chat_sdk(chat_id, card_content):
+    """Send an interactive card as a NEW message to a chat (not a reply)."""
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("interactive")
+            .content(json.dumps(card_content))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_card_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+@with_retry()
+def send_text_to_chat_sdk(chat_id, text):
+    """Send a plain text message as a NEW message to a chat."""
+    if text and len(text) > 28000:
+        text = text[:28000] + "\n\n（内容过长已截断）"
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("text")
+            .content(json.dumps({"text": text}))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_text_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+@with_retry()
+def upload_file_sdk(file_path, file_type=None):
+    """上传本地文件到飞书，返回 file_key（失败返回 None）。"""
+    ext_map = {
+        ".pdf": "pdf", ".doc": "doc", ".docx": "doc", ".xls": "xls",
+        ".xlsx": "xls", ".ppt": "ppt", ".pptx": "ppt", ".mp4": "mp4",
+        ".opus": "opus", ".ogg": "opus", ".mp3": "opus", ".wav": "opus",
+    }
+    ext = os.path.splitext(file_path)[1].lower()
+    ft = file_type or ext_map.get(ext, "stream")
+    try:
+        with open(file_path, "rb") as f:
+            req = CreateFileRequest.builder() \
+                .request_body(CreateFileRequestBody.builder()
+                    .file_type(ft)
+                    .file_name(os.path.basename(file_path))
+                    .file(f)
+                    .build()) \
+                .build()
+            resp = api_client.im.v1.file.create(req)
+        if resp.code == 0:
+            data = json.loads(resp.raw.content).get("data", {})
+            return data.get("file_key")
+        log.error(f"[upload_file_sdk] Failed: {resp.msg}")
+        return None
+    except Exception as e:
+        log.error(f"[upload_file_sdk] Error: {e}")
+        return None
+
+
+@with_retry()
+def send_file_to_chat_sdk(chat_id, file_key):
+    """向会话发送一个已上传的文件消息。"""
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("file")
+            .content(json.dumps({"file_key": file_key}))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_file_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+def send_local_file_to_chat(chat_id, file_path, file_type=None, caption=None):
+    """组合：上传本地文件并发送到会话；可选附带一段说明文字。"""
+    file_key = upload_file_sdk(file_path, file_type)
+    if not file_key:
+        return False
+    ok = send_file_to_chat_sdk(chat_id, file_key)
+    if ok and caption:
+        send_text_to_chat_sdk(chat_id, caption)
+    return ok
+
+
+def get_chat_name_sdk(chat_id):
+    """Resolve a group chat display name (empty on failure)."""
+    try:
+        req = GetChatRequest.builder().chat_id(chat_id).build()
+        resp = api_client.im.v1.chat.get(req)
+        if resp.code == 0 and resp.data:
+            return resp.data.name or ""
+        log.error(f"[get_chat_name_sdk] Failed: {resp.msg}")
+    except Exception as e:
+        log.error(f"[get_chat_name_sdk] Error: {e}")
+    return ""
+
+
+def get_user_name_sdk(open_id):
+    """Resolve a user display name by open_id (empty on failure)."""
+    if not open_id:
+        return ""
+    try:
+        req = GetUserRequest.builder().user_id_type("open_id").user_id(open_id).build()
+        resp = api_client.contact.v3.user.get(req)
+        if resp.code == 0 and resp.data and resp.data.user:
+            return resp.data.user.name or ""
+        log.error(f"[get_user_name_sdk] Failed: {resp.msg}")
+    except Exception as e:
+        log.error(f"[get_user_name_sdk] Error: {e}")
+    return ""
+
+
+async def send_card_to_chat_async(chat_id, card_content):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: send_card_to_chat_sdk(chat_id, card_content))
+
+
+async def send_text_to_chat_async(chat_id, text):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: send_text_to_chat_sdk(chat_id, text))
+
+
+async def get_chat_name_async(chat_id):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_chat_name_sdk(chat_id))
+
+
+async def get_user_name_async(open_id):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_user_name_sdk(open_id))

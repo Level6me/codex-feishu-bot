@@ -1,0 +1,17 @@
+services:
+  codex-feishu-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codex-feishu-bot
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+      - DB_FILE=/app/data/codex_bot.db
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ${HOME}/.codex:/root/.codex:ro
+    command: python3 main.py

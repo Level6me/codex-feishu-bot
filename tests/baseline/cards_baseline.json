@@ -1,0 +1,2288 @@
+{
+ "_create_footer": {
+  "elements": [
+   {
+    "content": "⚡ Powered by codex | 🕒 TIME",
+    "tag": "plain_text"
+   }
+  ],
+  "tag": "note"
+ },
+ "_fmt_ts": "2026-08-12 10:00",
+ "_format_ts": "TIME",
+ "_get_dynamic_think_text": "AI 思考中\n\n*( 🔍 正在系统内检索相关线索... 已耗时 3s )*",
+ "_guess_intent": [
+  "✨ AI 思考中...",
+  "正在为您深度分析与生成回复，请稍候..."
+ ],
+ "_short_id": "oc_bf2eaae8c596319ccf1507218952cb5b",
+ "_tier_label": "自定义权限",
+ "build_admin_welcome_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "首次部署绑定成功，本会话已被设为**最高管理员权限**。\n\n- 其他会话发来的 `/auth` 申请会推送到这里，您可以在卡片上直接通过 / 拒绝。\n- 使用 **`/user`** 管理已授权用户/群。\n- 您的会话不受权限与限流限制。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "👑 您已成为管理员",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_ai_response": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "回复内容",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**请选择：**",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "选项1",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "选项1",
+       "label": "选项1"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "选项2",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "选项2",
+       "label": "选项2"
+      }
+     }
+    ],
+    "layout": "bisect",
+    "tag": "action"
+   },
+   {
+    "content": "<font color='grey'>🤖 模型: deepseek-v4-flash | 📂 项目: 默认 | 💡 键入 /help 查看指令</font>",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "✨ AI 回复",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_auth_hint_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "您好，当前飞书会话尚未获得本机器人的使用权限。\n\n如需使用，请发送 **`/auth`** 向管理员申请授权。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "grey",
+   "title": {
+    "content": "🔒 当前会话未授权",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_auth_request_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**私聊会话**：`测试用户`\n**会话 ID**：`oc_x`\n**申请者**：`-`\n**申请时间**：-\n**累计申请**：0 次\n**最近消息**：（无）",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "请选择授权档位，或拒绝该申请：",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "✅ 基础权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "auth_approve",
+       "chat_id": "oc_x",
+       "tier": "basic"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "✅ 开发权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "auth_approve",
+       "chat_id": "oc_x",
+       "tier": "dev"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "✅ 完全权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "auth_approve",
+       "chat_id": "oc_x",
+       "tier": "full"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "❌ 拒绝",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "auth_deny",
+       "chat_id": "oc_x"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🚫 拉黑",
+       "tag": "plain_text"
+      },
+      "type": "danger",
+      "value": {
+       "action": "auth_ban",
+       "chat_id": "oc_x"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "🔔 新的权限申请",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_auth_result_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "授权成功",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "✅ 授权成功",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_brain_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**🧠 Codex 全局记忆（AGENTS.md）**\n以下内容对本机所有 Codex 会话生效，直接编辑该文件即可修改。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "文件: /tmp/AGENTS.md",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "# 记忆内容",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "purple",
+   "title": {
+    "content": "🧠 Codex 全局记忆库",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_context_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "📥 **当前上下文占用（最近一轮输入）**\n`[░░░░░░░░░░░░░░░░░░░░]` **0.0%** 🟢\n`0` / `400,000` tokens（其中缓存命中 `0`）\n\n📤 最近一轮输出：`0` tokens",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "📊 **本会话累计**\n- 对话轮数：`3`\n- 累计输入：`1,000` tokens\n- 累计输出：`500` tokens\n- 活跃模型：`默认`",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "会话线程: thread_1",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "💡 使用 `/clear` 可清空上下文并重置统计。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "wathet",
+   "title": {
+    "content": "🧮 上下文 Token 用量看板",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_cron_created_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**📌 任务基本信息**\n• **任务名称**：**测试任务** (`t1`)\n• **任务类别**：👤 用户主动任务 | **规则类型**：倒计时定时器\n• **触发规则**：`30s` | **下次预计触发**：`TIME`",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**📝 预设执行 Prompt**\n`回复ok`\n\n🛡️ *该任务已持久化存入数据库，中途发生重启亦可自动恢复倒计时与触发。*",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚡ 立即触发一次",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "run_cron_now",
+       "task_id": "t1"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚙️ 打开任务中心",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "open_cron_panel"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "✅ 计划任务创建成功: 测试任务",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_cron_execution_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**📌 任务基础信息**\n• **任务名称**：**测试任务** (`t1`) | **类别**：👤 用户任务\n• **完成耗时**：1.2 秒 | **完成时间**：TIME",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**📊 执行结果与报告**\n\n执行结果",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 再次运行",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "run_cron_now",
+       "task_id": "t1"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚙️ 管理任务中心",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "open_cron_panel"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "✅ 计划任务报告: 测试任务",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_cron_panel_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**⏱️ 计划任务管理中心 (Cron Center)**\n包含用户创建的周期指令与系统级后台任务。选中的分类：**👤 用户主动任务**",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔵 👤 用户任务",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "switch_cron_tab",
+       "tab": "user"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚙️ 系统任务",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "switch_cron_tab",
+       "tab": "system"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "➕ 新建任务",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "open_cron_create"
+      }
+     }
+    ],
+    "layout": "bisect",
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "*(暂无用户主动计划任务)*\n点击上方 **[ ➕ 新建任务 ]** 即可添加一个定时任务！",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "⏱️ 计划任务管理中心 (Cron Center)",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_cron_start_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**▶️ 计划任务已触发，正在后台启动执行...**\n\n• **任务名称**：**测试任务** (`t1`)\n• **任务类别**：👤 用户任务 | **触发规则**：`30s`\n• **执行指令**：`回复ok`\n\n⏳ *正在运行 Agent 分析并生成结果，请稍候...*",
+    "tag": "markdown"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "⏰ 触发提示: 测试任务",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_dir_browser_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "⚙️ **当前公共项目根目录**：\n`/tmp`",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "size": "small",
+        "tag": "button",
+        "text": {
+         "content": "⚙️ 设置",
+         "tag": "plain_text"
+        },
+        "type": "default",
+        "value": {
+         "action": "set_workspace_root_prompt"
+        }
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "content": "📂 **当前活跃开发工作区**：\n`/tmp`",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "➕ 新建项目",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "create_project_prompt",
+       "parent_path": "/tmp"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "📁 **项目选择列表** (第 1/2 页)：",
+    "tag": "markdown"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "📁 **antigravity-feishu-bot-upstream**\n*`/tmp/antigravity-feishu-bot-upstream`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/antigravity-feishu-bot-upstream"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/antigravity-feishu-bot-upstream"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "📁 **antigravity_XN3xts**\n*`/tmp/antigravity_XN3xts`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/antigravity_XN3xts"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/antigravity_XN3xts"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "📁 **iscsi-deploy**\n*`/tmp/iscsi-deploy`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/iscsi-deploy"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/iscsi-deploy"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "📁 **openclaw**\n*`/tmp/openclaw`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/openclaw"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/openclaw"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "📁 **powerlog**\n*`/tmp/powerlog`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/powerlog"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/powerlog"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "下一页 ▶️",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "browse_recent_page",
+       "current_path": "/tmp",
+       "page": 2
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "📁 项目管理器",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_download_indicator": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "正在为您下载并解析多媒体资源：**test.pdf**\n\n大文件（如视频、PDF）可能需要数秒至一分钟，请稍候...",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "wathet",
+   "title": {
+    "content": "📥 资源加载中...",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_global_memory_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**🧠 codex 全局记忆核心看板**\n这是一个自动生成的专属看板，用于展示机器人的长期跨会话记忆。所有的内容都会被持久化存储在宿主机本地。",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**🕒 2026-08-12**\n",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "purple",
+   "title": {
+    "content": "🧠 机器人全局记忆库",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_help_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**🤖 会话与模型**\n🔹 `/model` : 弹出模型切换面板，自动获取当前账号支持的 Codex 模型\n🔹 `/clear` : 清空当前对话的上下文记忆，重新开始\n🔹 `/context` : 查看当前会话的真实 Token 用量看板\n🔹 `/quota` : 查询 Codex 官方订阅额度用量\n🔹 `/stop` : 紧急刹车！强制中止正在后台生成的耗时任务",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**📂 项目与工作区**\n🔹 `/project` : 打开可视化项目管理器（翻页选择、新建项目、⚙️ 设置活跃工作区）\n🔹 `/project <路径>` : 设定公共项目根目录",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**🧠 记忆与笔记**\n🔹 `/memory` : 偏好记忆管理器（面板内可 ➕ 新增偏好 / 忘记条目）\n🔹 `/note` 或 `/notes` : 机器人记事本（面板内可 ➕ 添加笔记 / 查看 / 删除 / 清空）\n🔹 `/brain` : 查看 Codex 全局记忆（~/.codex/AGENTS.md）",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**🛠️ 系统运维**\n🔹 `/status` : 查看机器人进程 CPU / 内存 / 运行状态\n🔹 `/update` : 检查并获取云端最新版本的机器人引擎核心\n🔹 `/ping` : 测试机器人是否在线\n🔹 `/help` : 显示此帮助菜单",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "*✨ 隐藏黑科技提示：*\n* **多模态解析**：直接向我发送图片或文档 (PDF/Word/文本)，我能直接阅读分析！*\n* **远程终端**：我可以读取你电脑上的文件，甚至直接执行如 `ls -al` 等终端命令！*\n* **全网搜索**：发给我任意网页链接，我可以帮你提取摘要！*",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "💡 Codex 机器人操作指南",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_memory_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "🧠 **您的长时偏好与设定记录**：\n*(点击右侧「忘记」可立即在机器人记忆中擦除对应条目，点击下方「➕ 新增偏好」可添加新条目)*",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "🔹 偏好一",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "忘记",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "forget_single_memory",
+         "index": 0
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "🔹 偏好二",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "忘记",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "forget_single_memory",
+         "index": 1
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "➕ 新增偏好",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "add_memory_prompt"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "purple",
+   "title": {
+    "content": "🧠 偏好记忆管理器",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_model_panel": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "🎯 **当前活跃模型**：`deepseek-v4-flash`\n\n从下方选择一个模型，即可一键热切换：",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "⚡ **GPT 系列**",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "gpt-5.1-codex",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "switch_model",
+       "model": "gpt-5.1-codex"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "🔮 **其他模型**",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "✅ deepseek-v4-flash",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "switch_model",
+       "model": "deepseek-v4-flash"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "violet",
+   "title": {
+    "content": "🎛️ 大模型切换控制台",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_model_switch_result_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "🎉 **模型切换成功！**\n\n🔮 当前活跃模型已变更为：\n\n> **`deepseek-v4-flash`**\n\n🔄 上一个模型：~~gpt-5.1-codex~~\n\n*接下来的所有对话都将使用新模型进行响应。*",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "grey",
+   "title": {
+    "content": "🔮 模型已切换",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_no_update_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**当前运行版本**：`v1.0.1`\n\n🎉 太棒了！经过全网云端探测，您的机器人的核心引擎已经是最新形态，无需任何更新操作。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "✅ 系统已是最新版本",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_note_list_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "📝 **您的记事本内容：**",
+    "tag": "markdown"
+   },
+   {
+    "background_style": "default",
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "**1.** 买牛奶",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "size": "small",
+        "tag": "button",
+        "text": {
+         "content": "🔍 详情",
+         "tag": "plain_text"
+        },
+        "type": "default",
+        "value": {
+         "action": "view_note_detail",
+         "index": 0
+        }
+       },
+       {
+        "size": "small",
+        "tag": "button",
+        "text": {
+         "content": "🗑️ 删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "delete_note",
+         "index": 0
+        }
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "background_style": "default",
+    "columns": [
+     {
+      "elements": [
+       {
+        "content": "**2.** 写周报",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "size": "small",
+        "tag": "button",
+        "text": {
+         "content": "🔍 详情",
+         "tag": "plain_text"
+        },
+        "type": "default",
+        "value": {
+         "action": "view_note_detail",
+         "index": 1
+        }
+       },
+       {
+        "size": "small",
+        "tag": "button",
+        "text": {
+         "content": "🗑️ 删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "delete_note",
+         "index": 1
+        }
+       }
+      ],
+      "tag": "column",
+      "vertical_align": "top",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "➕ 添加笔记",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "add_note_prompt"
+      }
+     },
+     {
+      "confirm": {
+       "text": {
+        "content": "您确定要清空所有笔记吗？此操作不可撤销。",
+        "tag": "plain_text"
+       },
+       "title": {
+        "content": "确认清空",
+        "tag": "plain_text"
+       }
+      },
+      "tag": "button",
+      "text": {
+       "content": "🧹 清空全部记事本",
+       "tag": "plain_text"
+      },
+      "type": "danger",
+      "value": {
+       "action": "clear_notes"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "📔 机器人记事本",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_plugin_panel_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "▶ 📦 已安装插件 (1)",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "switch_plugin_tab",
+       "tab": "installed"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🏪 插件源与商店",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "switch_plugin_tab",
+       "tab": "sources"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**记忆** (`ai_memory` v1.0.0)\n• **运行状态**：🟢 已激活\n• **注册指令**：`/memory`",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 检查更新",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "update_plugin",
+       "plugin_id": "ai_memory"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🗑️ 物理卸载",
+       "tag": "plain_text"
+      },
+      "type": "danger",
+      "value": {
+       "action": "uninstall_plugin",
+       "plugin_id": "ai_memory"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "📥 从 GitHub URL 安装插件",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "prompt_install_github"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 热重载插件库 (Reload)",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "reload_plugins"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "indigo",
+   "title": {
+    "content": "🧩 机器人插件中心与应用商店",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_quota_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "👤 **登录方式**: 未知",
+    "tag": "markdown"
+   },
+   {
+    "content": "📇 **套餐类型**: `未知套餐`",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "ℹ️ 当前账号未返回窗口配额数据（可能是 usage-based 计费账号）。",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "elements": [
+     {
+      "content": "数据来源：本机 Codex CLI (codex app-server --stdio) · 仅反映官方订阅额度，自定义 provider 不在此列",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 刷新额度",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "refresh_quota"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "📊 Codex 订阅额度看板",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_rate_limit_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "请求过于频繁，请稍等片刻再试。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "yellow",
+   "title": {
+    "content": "⏳ 操作过于频繁",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_security_warning": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "🚨 **高危系统命令执行请求已被安全沙箱拦截！**\n\n您的输入中检测到了包含系统破坏性或高风险的黑名单特征指令，为了保护基座宿主系统的运行安全，已对该请求进行强行拦截与截断。\n\n**拦截的请求特征**：\n> `rm -rf /`\n\n*(如果您确实有系统维护管理需求，请登录物理终端进行手动执行。)*",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "red",
+   "title": {
+    "content": "⚠️ 安全威胁拦截警告",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_stall_error_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "任务已连续 **10 分钟** 无任何 Token、CPU 计算或日志写入，已判定为卡死并自动终止。\n\n**建议操作选项**：",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 重新发送此请求",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "测试提示",
+       "label": "重新发送请求"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚙️ 切换更快的模型",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "/model",
+       "label": "打开模型切换面板"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "red",
+   "title": {
+    "content": "⚠️ 任务无响应已终止",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_stall_warning_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "模型已思考 **200 秒**（静默生成等待已达 **3 分钟**）。\n\n*模型 API 正在云端进行思维链推理或长数据检索，后台守护机制正常工作中，已为您自动延长等待时间。*",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🟢 继续静默等待",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "继续等待",
+       "label": "继续静默等待"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🛑 叫停任务",
+       "tag": "plain_text"
+      },
+      "type": "danger",
+      "value": {
+       "action": "user_choice",
+       "choice": "/stop",
+       "label": "叫停任务"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "⏱️ AI 处于深度推理等待中",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_status_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**服务状态**：🟢 ONLINE\n**运行时长**：1天2小时\n**重启次数**：3 次",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**🌿 代码库状态 (Git)**\nclean",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**📈 机器人请求统计**\n- **总请求数**: 0\n- **成功处理**: 0\n- **执行异常**: 0",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**💡 模型算力消耗统计 (自带模型)**\n- **累计消耗 Tokens**: 0",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**💻 资源占用**\n- **CPU**：0.12%\n- **内存**：4096 MB",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 刷新状态",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "refresh_status"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "📊 服务器运行状态",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_streaming_indicator": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "*( ⏱️ 已思考 3s | 🛠️ 执行命令 )*\n\n---\n\n正在生成的部分文本 ▌",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "⚡ 正在生成 | ✨ AI 思考中...",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_tool_indicator": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "✅ 已成功获取资源：**test.txt**\n\n**当前动作：** `执行命令`\n\n*(AI 正在运行底层命令或操作文件，已运行 3s)*",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "turquoise",
+   "title": {
+    "content": "🛠️ 执行命令",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_typing_indicator": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "✅ 已成功获取资源：**test.txt**\n\n正在为您深度分析与生成回复，请稍候...\n\n*( 🔍 正在系统内检索相关线索... 已耗时 3s )*",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "✨ AI 思考中...",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_update_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**当前版本**：`v1.0.1`\n**发现新版本**：`v1.0.2`\n\n**更新日志 (Changelog)**：\n- fix: something\n\n<font color='red'>⚠️ 警告：执行升级将进行强制同步，会覆盖本地所有未提交的代码修改（您的 .env 配置和本地数据库不受影响）。</font>",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "确认并执行升级",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "/update confirm",
+       "label": "确认并执行升级"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "🔄 系统 OTA 升级提醒",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_user_edit_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "✏️ 正在编辑：**oc_x**\n当前权限级别：**自定义权限**\n\n请选择新的权限级别：",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "**基础权限**：对话、图片/文件解析、笔记偏好",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "设为基础权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_set_tier",
+       "chat_id": "oc_x",
+       "tier": "basic"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "content": "**开发权限**：基础权限 + 项目切换、文件回传",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "设为开发权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_set_tier",
+       "chat_id": "oc_x",
+       "tier": "dev"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "content": "**完全权限**：开发权限 + 执行 Shell、查看额度",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "设为完全权限",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_set_tier",
+       "chat_id": "oc_x",
+       "tier": "full"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "取消",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_edit_cancel"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "turquoise",
+   "title": {
+    "content": "✏️ 编辑会话权限",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_user_panel_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "**会话管理面板**（第 1/1 页，共 0 个会话）",
+    "tag": "markdown"
+   },
+   {
+    "content": "📭 暂无会话记录。",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "👥 用户 / 群权限管理",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_welcome_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "您好！我是您的 **codex 智能编程与系统开发助理**。\n\n当您看到这条消息，说明您的飞书机器人已经**成功部署并激活绑定**！\n\n我可以读取并修改您电脑上的文件、直接执行终端命令、跨网检索知识，还能接收并分析您发送给我的 PDF 文件、语音或截图。\n\n期待与您的合作，让我们开始吧！",
+    "tag": "markdown"
+   },
+   {
+    "tag": "hr"
+   },
+   {
+    "content": "💡 **快捷功能推荐** (点击下方按钮立即体验)：",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "📁 工作区项目",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "/project",
+       "label": "工作区项目"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🤖 切换模型",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "/model",
+       "label": "切换模型"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🎭 查看帮助",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "/help",
+       "label": "查看帮助"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🧹 清空上下文",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "/clear",
+       "label": "清空上下文"
+      }
+     }
+    ],
+    "layout": "flow",
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "green",
+   "title": {
+    "content": "🎉 部署成功！欢迎使用 codex 助手",
+    "tag": "plain_text"
+   }
+  }
+ }
+}
