@@ -14,13 +14,13 @@ user_profiles.json
 codex_log_*.txt
 *.log
 
-# Test and scratch files
-test_*.py
-add_*.py
-do_patch*.py
-fix_*.py
-dummy.txt
-hello.py
+# Test and scratch files (root-only; tests/ is tracked)
+/test_*.py
+/add_*.py
+/do_patch*.py
+/fix_*.py
+/dummy.txt
+/hello.py
 
 # Media generated/downloaded
 *.mov
