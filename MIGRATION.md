@@ -112,12 +112,18 @@
 
 **目标**：把单文件架构对齐到上游的 handlers/cards 模块化。
 
-- `main.py`（44KB）拆出：`handlers/events.py`、`handlers/messages.py`、`handlers/media.py`、`handlers/pipeline.py`、`handlers/card_actions.py`
-- `card_builder.py`（53KB）拆成 `cards/*.py`，保留 `card_builder.CardBuilder` 兼容导入层
-- 全局状态抽到 `app_state.py`（上游已有，可直接搬）
-- 验证项：是否需要上游的 lark-oapi CARD 帧补丁（当前卡片按钮能用，先验证再决定）
+### ✅ 已完成（2026-08-12）
 
-**验收**：功能与重构前完全一致，`main.py` 瘦身到 10KB 左右。
+| 动作 | 结果 |
+|---|---|
+| `main.py`（1395 行）拆出 handlers/events、messages、media、pipeline、card_actions | ✅ 瘦身至 99 行 |
+| 全局状态抽到 `app_state.py` | ✅ `main_loop`/队列/进程/去重统一入口 |
+| `card_builder.py`（2079 行）拆成 `cards/*.py`（constants + 10 个域模块） | ✅ 保留 `CardBuilder` 兼容转发层，调用点零改动 |
+| 验证 | ✅ 38 卡片方法输出快照与重构前完全一致；py_compile + 全链 import + pm2 重启真实链路通过 |
+
+**验收**：功能与重构前完全一致，`main.py` 99 行（约 4KB），达标。
+
+> 说明：lark-oapi CARD 帧补丁验证——当前卡片按钮经重构后仍可正常点击（真实链路确认），无需上游补丁。
 
 ---
 
