@@ -210,6 +210,28 @@ async def execute_codex(
 
     env = os.environ.copy()
     env.update({"GIT_TERMINAL_PROMPT": "0", "DEBIAN_FRONTEND": "noninteractive", "GIT_ASKPASS": "echo"})
+
+    # 防止同一会话并发启动多个 Codex 进程：直接覆盖 running_processes[chat_id]
+    # 会丢失进程追踪，且两个进程 resume 同一线程会造成线程错乱、卡片卡死。
+    existing = running_processes.get(chat_id)
+    if existing is not None and getattr(existing, "returncode", None) is None:
+        msg = (
+            "⚠️ 当前会话已有任务正在执行，已拒绝并发启动第二个任务"
+            f"（现有进程 pid={getattr(existing, 'pid', '?')}）。"
+            "请等待当前任务完成，或使用 /stop 终止后再试。"
+        )
+        log.warning(f"[execute_codex] {msg}")
+        if not silent:
+            err_card = CardBuilder.build_ai_response(msg, is_error=True)
+            try:
+                if bot_reply_msg_id:
+                    await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, err_card)
+                else:
+                    await _feishu_call(loop, send_interactive_card_sdk, message_id, err_card)
+            except Exception as e:
+                log.error(f"Failed to send concurrent-task error card: {e}")
+        return True
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
