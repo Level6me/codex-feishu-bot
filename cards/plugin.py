@@ -1,0 +1,197 @@
+"""卡片构建域：插件中心（阶段 5 第 3 步：自 card_builder.py 迁出）。"""
+import os
+import re
+from datetime import datetime
+
+from config import WORKSPACE_ROOT
+from logger import log
+from utils.auth import SCOPE_TIERS
+from cards.constants import TIER_LABELS, ROLE_LABELS, TIER_NOTES, MAX_MARKDOWN_CHARS, TRUNCATION_NOTICE
+from cards.common import (
+    _create_footer, _guess_intent, _get_dynamic_think_text,
+    _short_id, _tier_label, _fmt_ts, _format_ts,
+)
+
+
+def build_plugin_panel_card(plugin_list, active_tab="installed"):
+        from plugin_store import load_plugin_sources
+
+        is_installed = active_tab == "installed"
+        tab_actions = [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"{'▶ ' if is_installed else ''}📦 已安装插件 ({len(plugin_list)})"},
+                "type": "primary" if is_installed else "default",
+                "value": {"action": "switch_plugin_tab", "tab": "installed"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"{'▶ ' if not is_installed else ''}🏪 插件源与商店"},
+                "type": "primary" if not is_installed else "default",
+                "value": {"action": "switch_plugin_tab", "tab": "sources"},
+            },
+        ]
+
+        elements = [
+            {"tag": "action", "layout": "flow", "actions": tab_actions},
+            {"tag": "hr"},
+        ]
+
+        if is_installed:
+            if not plugin_list:
+                elements.append({
+                    "tag": "markdown",
+                    "content": "⚠️ *当前 `plugins/` 目录下暂无安装的插件。切换到【🏪 插件源与商店】Tab 或使用 GitHub URL 即可一键安装扩展能力。*",
+                })
+            else:
+                for p in plugin_list:
+                    pid = p.get("id", "")
+                    name = p.get("name", pid)
+                    version = p.get("version", "1.0.0")
+                    cmds = p.get("commands", [])
+                    cmd_str = ", ".join([f"`{c}`" for c in cmds]) if cmds else "无专属指令"
+                    enabled = p.get("enabled", True)
+                    status_tag = "🟢 已激活" if enabled else "⚪ 已禁用"
+
+                    elements.append({
+                        "tag": "markdown",
+                        "content": (
+                            f"**{name}** (`{pid}` v{version})\n"
+                            f"• **运行状态**：{status_tag}\n"
+                            f"• **注册指令**：{cmd_str}"
+                        ),
+                    })
+                    elements.append({
+                        "tag": "action",
+                        "layout": "flow",
+                        "actions": [
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "🔄 检查更新"},
+                                "type": "default",
+                                "value": {"action": "update_plugin", "plugin_id": pid},
+                            },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "🗑️ 物理卸载"},
+                                "type": "danger",
+                                "value": {"action": "uninstall_plugin", "plugin_id": pid},
+                            },
+                        ],
+                    })
+                    elements.append({"tag": "hr"})
+
+            elements.append({
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "📥 从 GitHub URL 安装插件"},
+                        "type": "primary",
+                        "value": {"action": "prompt_install_github"},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔄 热重载插件库 (Reload)"},
+                        "type": "default",
+                        "value": {"action": "reload_plugins"},
+                    },
+                ],
+            })
+        else:
+            load_plugin_sources()
+            elements.append({
+                "tag": "markdown",
+                "content": "**🏪 插件源与商店**\n• **当前插件源仓库**：`https://github.com/Level6me/feishu-bot-plugin`",
+            })
+            elements.append({"tag": "hr"})
+
+            try:
+                from plugin_store import fetch_remote_store_plugins
+                remote_plugins = fetch_remote_store_plugins(force_refresh=False) or []
+            except Exception:
+                remote_plugins = []
+
+            if not remote_plugins:
+                remote_plugins = [{
+                    "id": "server_health", "name": "🖥️ 服务器巡检与健康报告",
+                    "repo_url": "https://github.com/Level6me/feishu-bot-plugin",
+                    "description": "监控 CPU 负载、内存率、磁盘余量，发送 /sysinfo 即可查看",
+                }]
+
+            elements.append({"tag": "markdown", "content": f"**🌟 在线插件扩展库 (共 {len(remote_plugins)} 个插件)**"})
+            installed_ids = {p.get("id") for p in plugin_list}
+
+            for rem in remote_plugins:
+                r_id = rem["id"]
+                r_name = rem.get("name", r_id)
+                r_url = rem.get("repo_url", "https://github.com/Level6me/feishu-bot-plugin")
+                r_desc = rem.get("description", "")
+                is_installed_rem = r_id in installed_ids
+
+                btn_text = "卸载" if is_installed_rem else "安装"
+                btn_type = "danger" if is_installed_rem else "primary"
+                action_dict = (
+                    {"action": "uninstall_plugin", "plugin_id": r_id}
+                    if is_installed_rem
+                    else {"action": "install_github_repo", "repo_url": r_url, "plugin_id": r_id}
+                )
+
+                elements.append({
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 4,
+                            "elements": [{"tag": "markdown", "content": f"**{r_name}** (`{r_id}`)\n{r_desc}"}],
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "center",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {"tag": "plain_text", "content": btn_text},
+                                    "type": btn_type,
+                                    "value": action_dict,
+                                }
+                            ],
+                        },
+                    ],
+                })
+                elements.append({"tag": "hr"})
+
+            elements.append({
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔄 刷新插件列表"},
+                        "type": "primary",
+                        "value": {"action": "refresh_store_plugins"},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "➕ 添加 GitHub 插件源"},
+                        "type": "default",
+                        "value": {"action": "prompt_add_source"},
+                    },
+                ],
+            })
+
+        elements.append(_create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": "🧩 机器人插件中心与应用商店"},
+                "template": "indigo",
+            },
+            "elements": elements,
+        }
