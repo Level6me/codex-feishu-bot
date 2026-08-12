@@ -187,6 +187,7 @@ class PendingCommand(str, Enum):
     CREATE_PROJECT = "create_project"
     NOTE_ADD = "note_add"
     WORKSPACE_ROOT = "workspace_root"
+    CRON_ADD = "cron_add"
 
 
 # 已知斜杠命令白名单：仅当用户输入命中时才清除 pending 状态，
@@ -195,6 +196,8 @@ _SLASH_COMMANDS = {
     "/help", "/model", "/card", "/menu", "/project", "/note", "/notes",
     "/status", "/context", "/quota", "/clear", "/stop", "/update", "/ping",
     "/remember", "/memory", "/forget", "/brain", "/newproj_resolve",
+    "/user", "/auth", "/cron", "/schedule", "/plugin", "/plugins",
+    "/sysinfo", "/health", "/light", "/led",
 }
 
 
@@ -283,6 +286,50 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
             return True, user_text
             
+        elif pending_command == PendingCommand.CRON_ADD.value:
+            raw_input = user_text.strip()
+            import re as _re
+            import time as _time
+            parts = [p.strip() for p in _re.split(r'[|｜]', raw_input) if p.strip()]
+            if len(parts) < 3:
+                reply_text = (
+                    "❌ **格式无效！**\n\n"
+                    "请按规范发送 3 段数据，用竖线 `|` 隔开：\n"
+                    "`任务名称 | 触发规则(如 0 9 * * * 或 600s) | 执行 Prompt`\n\n"
+                    "例如：`每日总结 | 0 9 * * * | 检查当前工作区的 Git 提交并生成日报`"
+                )
+            else:
+                name, expr, prompt = parts[0], parts[1], parts[2]
+                task_type = 'delay' if _re.match(r'^\d+\s*[s|m|h|d]?$', expr.lower()) else 'cron'
+
+                from cron_engine import compute_next_run
+                now_ts = int(_time.time())
+                next_run = compute_next_run(expr, task_type, now_ts)
+
+                task_id = f"task_usr_{now_ts}"
+                task_data = {
+                    'id': task_id,
+                    'chat_id': chat_id,
+                    'category': 'user',
+                    'name': name,
+                    'task_type': task_type,
+                    'cron_expr': expr,
+                    'prompt': prompt,
+                    'project_path': session_data.get('project', ''),
+                    'is_active': True,
+                    'created_by': chat_id,
+                    'created_at': now_ts,
+                    'next_run_at': next_run,
+                }
+
+                from database import save_cron_task
+                save_cron_task(task_data)
+                created_card = CardBuilder.build_cron_created_card(task_data)
+                session_data.pop("pending_command", None)
+                await save_session_async(chat_id, session_data)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, created_card))
+                return True, user_text
+
         elif pending_command == PendingCommand.CREATE_PROJECT:
             return await _handle_create_project(user_text, message_id, chat_id, session_data)
 
@@ -516,6 +563,125 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, status_card))
         return True, user_text
 
+    elif user_text.startswith("/user"):
+        from utils.auth import (
+            SCOPE_TIERS,
+            get_admin_chat_id,
+            set_session_role,
+            start_display_name_refresh,
+        )
+        from database import list_auth_sessions, set_bot_meta
+
+        args = user_text[len("/user"):].strip()
+        if not args:
+            sessions = list_auth_sessions()
+            task = start_display_name_refresh(sessions)
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=3.0)
+            except asyncio.TimeoutError:
+                log.warning("[/user] display-name resolution still running in background")
+            panel = CardBuilder.build_user_panel_card(list_auth_sessions())
+            await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, panel))
+            return True, user_text
+
+        parts = args.split()
+        op = parts[0].lower()
+
+        if op == "grant" and len(parts) >= 2:
+            target = parts[1]
+            tier = parts[2] if len(parts) >= 3 and parts[2] in SCOPE_TIERS else "basic"
+            set_session_role(target, "user", list(SCOPE_TIERS[tier]), operator=chat_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: send_reply_sdk(message_id, f"✅ 已授权 {target}（{tier}）。"),
+            )
+            return True, user_text
+
+        if op in ("revoke", "ban", "unban") and len(parts) >= 2:
+            target = parts[1]
+            if op == "revoke":
+                set_session_role(target, "guest", [], operator=chat_id)
+                msg = f"✅ 已撤销 {target} 的授权。"
+            elif op == "ban":
+                set_session_role(target, "banned", [], operator=chat_id)
+                msg = f"🚫 已拉黑 {target}。"
+            else:
+                set_session_role(target, "guest", [], operator=chat_id)
+                msg = f"✅ 已解除 {target} 的拉黑。"
+            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, msg))
+            return True, user_text
+
+        if op == "promote" and len(parts) >= 2:
+            target = parts[1]
+            set_session_role(target, "admin", [], operator=chat_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: send_reply_sdk(message_id, f"👑 已提升 {target} 为管理员。"),
+            )
+            return True, user_text
+
+        if op == "demote" and len(parts) >= 2:
+            target = parts[1]
+            set_session_role(target, "user", list(SCOPE_TIERS["dev"]), operator=chat_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: send_reply_sdk(message_id, f"✅ 已将 {target} 降为普通用户（开发权限）。"),
+            )
+            return True, user_text
+
+        if op == "reset-admin":
+            if args.strip() == "reset-admin confirm":
+                admin_id = get_admin_chat_id()
+                if admin_id:
+                    set_session_role(admin_id, "user", list(SCOPE_TIERS["dev"]), operator=chat_id)
+                set_session_role(chat_id, "admin", [], operator=chat_id)
+                set_bot_meta("admin_chat_id", chat_id)
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: send_reply_sdk(message_id, "✅ 管理员已重新绑定到当前会话。"),
+                )
+            else:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: send_reply_sdk(
+                        message_id,
+                        "⚠️ 重新绑定管理员将把当前会话设为新的管理员。\n确认请发送：`/user reset-admin confirm`",
+                    ),
+                )
+            return True, user_text
+
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: send_reply_sdk(
+                message_id,
+                "用法：\n`/user` 打开管理面板\n`/user grant <chat_id> [basic|dev|full]`\n"
+                "`/user revoke|ban|unban <chat_id>`\n`/user promote|demote <chat_id>`\n`/user reset-admin`",
+            ),
+        )
+        return True, user_text
+
+    elif user_text.strip() == "/auth":
+        # 已授权会话无需申请；管理员直接提示已是管理员
+        from utils.auth import get_role
+        role = get_role(chat_id)
+        if role == "admin":
+            reply = "👑 当前会话已是管理员，无需申请授权。"
+        elif role == "user":
+            reply = "✅ 当前会话已授权，无需重复申请。"
+        elif role == "banned":
+            reply = "🚫 当前会话已被拉黑。"
+        else:
+            reply = "📨 已向管理员发送授权申请，请等待审批。\n（若长时间未响应，请联系管理员）"
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply))
+        return True, user_text
+
+    elif user_text.startswith("/cron") or user_text.startswith("/schedule"):
+        from database import get_all_cron_tasks
+        tasks = await asyncio.get_running_loop().run_in_executor(None, lambda: get_all_cron_tasks(chat_id))
+        cron_card = CardBuilder.build_cron_panel_card(tasks, active_tab="user", session_data=session_data)
+        await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, cron_card))
+        return True, user_text
+
     elif user_text.strip() in ["/model", "/card", "/menu"]:
         from codex_quota import fetch_codex_models, fetch_codex_default_model
         try:
@@ -605,6 +771,28 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
     elif user_text.startswith("/help"):
         help_card = CardBuilder.build_help_card()
         await asyncio.get_running_loop().run_in_executor(None, lambda: send_interactive_card_sdk(message_id, help_card))
+        return True, user_text
+
+    elif user_text.startswith("/plugin") or user_text.startswith("/plugins"):
+        from plugin_manager import plugin_manager
+        args = user_text[len(first_word):].strip()
+        if args == "reload":
+            plugin_manager.reload_plugins()
+            await asyncio.get_running_loop().run_in_executor(
+                None, lambda: send_reply_sdk(message_id, "✅ 已成功热重载插件中心！")
+            )
+        else:
+            p_list = plugin_manager.get_plugin_list()
+            card = CardBuilder.build_plugin_panel_card(p_list)
+            await asyncio.get_running_loop().run_in_executor(
+                None, lambda: send_interactive_card_sdk(message_id, card)
+            )
+        return True, user_text
+
+    # Dispatch command to plugin manager (system commands take priority)
+    from plugin_manager import plugin_manager
+    plugin_handled, _ = await plugin_manager.dispatch_command(user_text, message_id, chat_id, session_data)
+    if plugin_handled:
         return True, user_text
 
     reply_text = f"❓ 未知指令：`{user_text.split()[0]}`\n发送 `/help` 查看全部可用指令。"
