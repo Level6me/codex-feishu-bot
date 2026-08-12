@@ -139,6 +139,7 @@
 | DB 路径可配置 | ✅ `DB_FILE` 环境变量（默认 `codex_bot.db`，本机行为不变） |
 | 文档同步 | ✅ `.env.example`、README（含 Docker 部署小节）、CHANGELOG 均已同步 |
 | 停滞检测 | ✅ 600 秒 + stderr + custom_tool_call，已对齐无需再动 |
+| 部署脚本多平台化 | ✅ `install.sh` 自动检测 macOS / Debian / Fedora / RHEL / Arch / Alpine；用户级 npm 安装 pm2/Codex（免 sudo）；开机自启按平台适配 |
 
 > 说明：本机无 Docker 环境，未做镜像实际构建；compose 结构已静态核对，构建命令见 README。
 

@@ -97,11 +97,27 @@
 - Node.js 与 npm（仅用于安装 PM2）
 - Codex CLI（已安装并完成 `codex login`）
 
+### 支持平台
+
+| 平台 | 方式 | 说明 |
+|---|---|---|
+| macOS 12+ | 一键脚本 / 手动 | 自动使用 Homebrew + 用户级 npm，免 sudo |
+| Debian / Ubuntu | 一键脚本 / 手动 | `apt-get` 自动安装依赖 |
+| Fedora / RHEL | 一键脚本 / 手动 | `dnf` / `yum` 自动安装依赖 |
+| Arch Linux | 一键脚本 / 手动 | `pacman` 自动安装依赖 |
+| Alpine Linux | 一键脚本 / 手动 | `apk` 自动安装依赖 |
+| 任意平台 | Docker | 容器内运行，数据目录挂载持久化 |
+
+> 树莓派（Raspberry Pi OS）默认作为 Linux 平台部署；GPIO 状态灯是可选的
+> **插件**（`rpi_gpio_status`），非树莓派环境自动降级为模拟日志模式，不影响其他功能。
+
 ### 一键部署（最推荐）
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/Level6me/codex-feishu-bot/main/install.sh)
 ```
-脚本自动克隆源码、引导填写飞书凭证、创建虚拟环境、安装依赖并启动 PM2 服务。
+脚本自动检测操作系统与包管理器，克隆源码、引导填写飞书凭证、安装/检测 Codex CLI、
+创建虚拟环境、安装依赖并启动 PM2 服务；macOS 使用用户级 npm 目录（免 sudo），
+Linux 各发行版按 `apt-get / dnf / yum / pacman / apk` 自动适配。
 
 ### 手动部署
 ```bash

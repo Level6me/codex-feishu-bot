@@ -1,173 +1,290 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# ==========================================
-# Codex Feishu Bot 交互式部署脚本
-# ==========================================
+# ==============================================
+# Codex Feishu Bot 一键部署脚本（多平台版）
+# 支持：macOS / Debian·Ubuntu / Fedora·RHEL / Arch / Alpine
+# 用法：./install.sh   或   bash <(curl -sL https://raw.githubusercontent.com/Level6me/codex-feishu-bot/main/install.sh)
+# ==============================================
 
 set -e
 
-# --- 1. 欢迎与环境检测 ---
-if [ "$EUID" -eq 0 ]; then
-    echo "❌ 错误: 发现你正在使用 root 权限 (sudo) 运行此脚本！"
-    echo "为了避免权限错乱和安全风险，请【不要】使用 sudo 执行本脚本。"
-    echo "只需作为普通用户运行 (./install.sh)，脚本在最后配置开机自启时会自动向你索要临时授权。"
-    exit 1
-fi
-
-echo "=========================================="
-echo "    Codex Feishu Bot 一键部署脚本"
-echo "=========================================="
-echo ""
-
-if ! command -v python3 &> /dev/null; then
-    echo "❌ 错误: 未检测到 python3，请先安装 Python 3.10+"
-    exit 1
-fi
-
-if ! command -v pm2 &> /dev/null; then
-    echo "⚠️ 未检测到 pm2，准备尝试自动安装 Node.js, npm 和 pm2..."
-    
-    if ! command -v npm &> /dev/null; then
-        echo "⚠️ 未检测到 npm，准备通过 apt-get 安装 nodejs 和 npm..."
-        if command -v apt-get &> /dev/null; then
-            echo "👉 需要 sudo 权限来安装依赖包："
-            sudo apt-get update
-            sudo apt-get install -y nodejs npm
-        else
-            echo "❌ 错误: 未找到 apt-get，无法自动安装 nodejs 和 npm。请手动安装后重试。"
-            exit 1
-        fi
-    fi
-    
-    echo "⬇️ 正在全局安装 pm2..."
-    sudo npm install -g pm2
-    
-    if ! command -v pm2 &> /dev/null; then
-        echo "❌ 错误: pm2 自动安装失败，请手动执行 npm install -g pm2"
-        exit 1
-    fi
-    echo "✅ pm2 自动安装成功。"
-fi
-
-DEPLOY_BACKEND="${AGENT_BACKEND:-codex}"
-if [ -f .env ]; then
-    DEPLOY_BACKEND="$(sed -n "s/^AGENT_BACKEND=//p" .env | tail -n 1)"
-    DEPLOY_BACKEND="${DEPLOY_BACKEND:-codex}"
-fi
-if [ "$DEPLOY_BACKEND" = "codex" ]; then
-    command -v "${CODEX_BIN:-codex}" >/dev/null || { echo "⚠️ 未检测到 Codex CLI（${CODEX_BIN:-codex}）。"; exit 1; }
-fi
-echo "✅ 环境检测通过 (python3, pm2, backend=${DEPLOY_BACKEND})"
-echo ""
-
-# --- 2. 源码获取与更新 ---
 REPO_URL="https://github.com/Level6me/codex-feishu-bot.git"
 PROJECT_DIR="codex-feishu-bot"
-if [ ! -f "main.py" ]; then
-    echo "⚠️ 未在当前目录检测到核心文件 (main.py)，准备克隆或更新代码仓库..."
-    if [ ! -d "$PROJECT_DIR" ]; then
-        echo "⬇️ 正在从 GitHub 克隆项目..."
-        git clone "$REPO_URL" "$PROJECT_DIR"
-    fi
-    cd "$PROJECT_DIR"
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo "⬇️ 正在拉取最新代码..."
-        git pull origin main || true
-    fi
-else
-    echo "✅ 当前目录已是项目源码根目录。"
-    echo "⬇️ 尝试拉取最新代码..."
-    git pull origin main || true
-fi
-echo ""
+PM2_NAME="codex-feishu-bot"
 
-# --- 3. 交互式环境变量配置 ---
-configure_env=true
-if [ -f .env ]; then
-    read -p "⚠️ 检测到已存在 .env 配置文件，是否覆盖？[y/N]: " overwrite_env
-    if [[ ! "$overwrite_env" =~ ^[Yy]$ ]]; then
-        configure_env=false
-        echo "⏭️ 跳过环境变量配置，使用现有 .env 文件。"
+# ---------- 0. 平台检测 ----------
+detect_os() {
+    case "$(uname -s)" in
+        Linux*)  OS="linux" ;;
+        Darwin*) OS="macos" ;;
+        *)       OS="unknown" ;;
+    esac
+
+    DISTRO=""
+    PKG_MGR=""
+    if [ "$OS" = "linux" ]; then
+        if   command -v apt-get >/dev/null 2>&1; then DISTRO="debian"; PKG_MGR="apt-get"
+        elif command -v dnf     >/dev/null 2>&1; then DISTRO="fedora"; PKG_MGR="dnf"
+        elif command -v yum     >/dev/null 2>&1; then DISTRO="rhel";   PKG_MGR="yum"
+        elif command -v pacman  >/dev/null 2>&1; then DISTRO="arch";   PKG_MGR="pacman"
+        elif command -v apk     >/dev/null 2>&1; then DISTRO="alpine"; PKG_MGR="apk"
+        fi
+    elif [ "$OS" = "macos" ]; then
+        PKG_MGR="brew"
     fi
-fi
+}
 
-if [ "$configure_env" = true ]; then
-    echo "------------------------------------------"
-    echo "请输入飞书应用的配置信息 (可在飞书开发者后台获取):"
-    read -p "👉 FEISHU_APP_ID (例: cli_a4...): " app_id
-    read -p "👉 FEISHU_APP_SECRET: " app_secret
-
-    if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
-        echo "❌ APP_ID 或 APP_SECRET 不能为空，部署中断。"
+# ---------- 1. 环境检测 ----------
+check_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "❌ 错误: 请不要使用 root 权限运行此脚本（普通用户即可，需要提权时会自动询问 sudo）。"
         exit 1
     fi
+}
 
-    echo "FEISHU_APP_ID=$app_id" > .env
-    echo "FEISHU_APP_SECRET=$app_secret" >> .env
-    echo "AGENT_BACKEND=codex" >> .env
-    echo "CODEX_BIN=codex" >> .env
-    echo "✅ .env 配置文件已成功生成。"
-fi
-echo ""
+check_python() {
+    if ! command -v python3 &>/dev/null; then
+        echo "⚠️ 未检测到 python3，尝试自动安装..."
+        install_system_pkgs
+    fi
+    if ! command -v python3 &>/dev/null; then
+        echo "❌ python3 安装失败，请手动安装 Python 3.10+ 后重试。"
+        exit 1
+    fi
+    PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    echo "✅ Python $PY_VER"
+}
 
-# --- 4. 配置虚拟环境与依赖 ---
-echo "📦 开始配置 Python 虚拟环境并安装依赖..."
-if [ ! -d "venv" ]; then
-    if ! python3 -m venv venv; then
-        echo "⚠️ 虚拟环境创建失败，可能是因为缺失 python3-venv。"
-        if command -v apt-get &> /dev/null; then
-            echo "👉 尝试通过 apt-get 自动安装 python3-venv (需要 sudo 权限)..."
+# ---------- 2. 按平台安装系统依赖 ----------
+install_system_pkgs() {
+    echo "👉 按平台安装系统依赖 (${PKG_MGR:-未识别})..."
+    case "$DISTRO" in
+        debian)
             sudo apt-get update
-            sudo apt-get install -y python3-venv python3.12-venv || true
-            
-            if ! python3 -m venv venv; then
-                echo "❌ 错误: 自动安装 python3-venv 后仍无法创建虚拟环境，请手动解决。"
-                exit 1
+            sudo apt-get install -y --no-install-recommends nodejs npm python3 python3-venv python3-pip git ca-certificates
+            ;;
+        fedora)
+            sudo dnf install -y nodejs npm python3 python3-pip git ca-certificates || true
+            ;;
+        rhel)
+            sudo yum install -y nodejs npm python3 python3-pip git ca-certificates || true
+            ;;
+        arch)
+            sudo pacman -S --noconfirm nodejs npm python python-pip git ca-certificates || true
+            ;;
+        alpine)
+            sudo apk add --no-cache nodejs npm python3 py3-pip git ca-certificates || true
+            ;;
+        "")
+            if [ "$OS" = "macos" ]; then
+                if ! command -v brew &>/dev/null; then
+                    echo "❌ 未检测到 Homebrew。请先安装："
+                    echo '   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+                    exit 1
+                fi
+                brew install node python@3.12 git 2>/dev/null || true
+            else
+                echo "⚠️ 无法识别的 Linux 发行版，请手动安装 nodejs / npm / python3 / git。"
             fi
-        else
-            echo "❌ 错误: 未找到 apt-get，无法自动安装 python3-venv。请手动解决。"
-            exit 1
-        fi
+            ;;
+    esac
+}
+
+# ---------- 3. Node / npm / pm2 ----------
+ensure_npm() {
+    if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+        install_system_pkgs
     fi
-    echo "✅ 虚拟环境 (venv) 创建成功。"
-else
-    echo "✅ 虚拟环境 (venv) 已存在。"
-fi
+    command -v npm &>/dev/null || { echo "❌ npm 安装失败，请手动安装 Node.js。"; exit 1; }
+    echo "✅ Node $(node -v 2>/dev/null) / npm $(npm -v 2>/dev/null)"
+}
 
-# 激活虚拟环境并安装依赖
-source venv/bin/activate
-pip install --upgrade pip
-if [ -f requirements.txt ]; then
-    pip install -r requirements.txt
-else
-    echo "⚠️ 未找到 requirements.txt，尝试直接安装 lark-oapi..."
-    pip install lark-oapi
-fi
-echo "✅ 依赖安装完成。"
-echo ""
+ensure_pm2() {
+    if command -v pm2 &>/dev/null; then
+        echo "✅ pm2 已存在 ($(pm2 -v 2>/dev/null))"
+        return
+    fi
 
-# --- 5. PM2 启动服务 ---
-echo "🚀 准备启动机器人后台服务..."
-read -p "是否立即使用 PM2 启动/重启 codex-feishu-bot 服务？[Y/n]: " start_pm2
-if [[ ! "$start_pm2" =~ ^[Nn]$ ]]; then
-    # 检查进程是否存在
-    if pm2 status | grep -q "codex-feishu-bot"; then
-        pm2 restart "codex-feishu-bot"
-        echo "✅ 服务已重启。"
+    echo "⚠️ 未检测到 pm2，尝试安装..."
+    NPM_PREFIX="$(npm config get prefix 2>/dev/null || true)"
+    if [ "$OS" = "macos" ] && [ ! -w "$NPM_PREFIX" ] 2>/dev/null; then
+        # macOS 用户级安装，避免 sudo 污染系统目录
+        echo "👉 使用用户级 npm 目录安装 pm2..."
+        mkdir -p "$HOME/.npm-global"
+        npm config set prefix "$HOME/.npm-global" 2>/dev/null || true
+        export PATH="$HOME/.npm-global/bin:$PATH"
+    fi
+
+    if npm install -g pm2 2>/dev/null; then
+        :
     else
-        pm2 start venv/bin/python3 --name "codex-feishu-bot" -- main.py
-        echo "✅ 服务已启动。"
+        echo "👉 用户级安装失败，尝试 sudo 全局安装..."
+        sudo npm install -g pm2
     fi
 
-    STARTUP_CMD=$(pm2 startup | grep 'sudo')
-    if [ -n "$STARTUP_CMD" ]; then
-        echo "⚠️  接下来将为您配置开机服务，可能会提示输入您的开机密码（输入时不会显示字符，按回车即可）："
-        eval "$STARTUP_CMD"
-        echo "✅ 开机自启配置完成！"
+    command -v pm2 &>/dev/null || { echo "❌ pm2 安装失败，请手动执行 npm install -g pm2。"; exit 1; }
+    echo "✅ pm2 $(pm2 -v 2>/dev/null)"
+}
+
+# ---------- 4. Codex CLI ----------
+find_codex() {
+    if command -v codex &>/dev/null; then
+        echo "codex"
+        return 0
+    fi
+    for cand in "$HOME/.npm-global/bin/codex" "$HOME/.local/bin/codex" "/opt/homebrew/bin/codex" "/usr/local/bin/codex"; do
+        if [ -x "$cand" ]; then
+            echo "$cand"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ensure_codex() {
+    DEPLOY_BACKEND="${AGENT_BACKEND:-codex}"
+    if [ -f .env ]; then
+        DEPLOY_BACKEND="$(sed -n "s/^AGENT_BACKEND=//p" .env | tail -n 1)"
+        DEPLOY_BACKEND="${DEPLOY_BACKEND:-codex}"
+    fi
+    if [ "$DEPLOY_BACKEND" != "codex" ]; then
+        echo "✅ 后端非 codex（${DEPLOY_BACKEND}），跳过 Codex 检测。"
+        return
+    fi
+
+    CODEX_PATH="$(find_codex || true)"
+    if [ -z "$CODEX_PATH" ]; then
+        echo "⚠️ 未检测到 Codex CLI，尝试通过 npm 安装..."
+        ensure_npm
+        npm install -g @openai/codex 2>/dev/null || sudo npm install -g @openai/codex || true
+        CODEX_PATH="$(find_codex || true)"
+    fi
+    if [ -z "$CODEX_PATH" ]; then
+        echo "❌ 未找到 Codex CLI。安装后请确认 PATH 包含其可执行文件目录，或设置 CODEX_BIN 环境变量。"
+        exit 1
+    fi
+    echo "✅ Codex CLI: $CODEX_PATH"
+    # 将用户级目录补进 .env，保证 PM2 启动时能找到
+    CODEX_DIR="$(dirname "$CODEX_PATH")"
+    if [ "$CODEX_DIR" != "/usr/bin" ] && [ "$CODEX_DIR" != "/usr/local/bin" ] && [ "$CODEX_DIR" != "/opt/homebrew/bin" ]; then
+        echo "CODEX_BIN=$CODEX_PATH" >> .env
+    fi
+}
+
+# ---------- 5. 主流程 ----------
+main() {
+    detect_os
+    echo "=========================================="
+    echo "    Codex Feishu Bot 一键部署脚本"
+    echo "    平台: ${OS} / ${DISTRO:-${PKG_MGR:-unknown}}"
+    echo "=========================================="
+    echo ""
+
+    check_root
+    check_python
+    ensure_npm
+    ensure_pm2
+
+    # ---------- 源码获取 ----------
+    if [ ! -f "main.py" ]; then
+        echo "⚠️ 未检测到核心文件 (main.py)，准备克隆项目..."
+        if [ ! -d "$PROJECT_DIR" ]; then
+            git clone "$REPO_URL" "$PROJECT_DIR"
+        fi
+        cd "$PROJECT_DIR"
+    fi
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "⬇️ 尝试拉取最新代码..."
+        git pull origin main || true
     fi
     echo ""
-    echo "🎉 部署完成！你的飞书机器人现在应该已经上线了。"
-    echo "👉 你可以使用 'pm2 logs codex-feishu-bot' 来查看实时运行日志。"
-else
-    echo "⏭️ 跳过启动。你可以稍后手动运行: pm2 start venv/bin/python3 --name \"codex-feishu-bot\" -- main.py"
-fi
+
+    # ---------- 环境变量 ----------
+    if [ -f .env ] && [ -z "${CODEX_BIN:-}" ]; then
+        :
+    fi
+    configure_env=true
+    if [ -f .env ]; then
+        read -r -p "⚠️ 检测到 .env 已存在，是否覆盖？[y/N]: " overwrite_env
+        if [[ ! "$overwrite_env" =~ ^[Yy]$ ]]; then
+            configure_env=false
+            echo "⏭️ 使用现有 .env。"
+        fi
+    fi
+    if [ "$configure_env" = true ]; then
+        echo "------------------------------------------"
+        echo "请输入飞书应用配置 (飞书开发者后台获取):"
+        read -r -p "👉 FEISHU_APP_ID (例: cli_a4...): " app_id
+        read -r -p "👉 FEISHU_APP_SECRET: " app_secret
+        if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
+            echo "❌ APP_ID / APP_SECRET 不能为空。"
+            exit 1
+        fi
+        {
+            echo "FEISHU_APP_ID=$app_id"
+            echo "FEISHU_APP_SECRET=$app_secret"
+            echo "AGENT_BACKEND=codex"
+            echo "CODEX_BIN=codex"
+        } > .env
+        echo "✅ .env 已生成。"
+    fi
+    ensure_codex
+    echo ""
+
+    # ---------- 虚拟环境与依赖 ----------
+    echo "📦 配置 Python 虚拟环境..."
+    if [ ! -d "venv" ]; then
+        if ! python3 -m venv venv; then
+            echo "⚠️ venv 创建失败，尝试安装 python3-venv..."
+            case "$DISTRO" in
+                debian) sudo apt-get update && sudo apt-get install -y python3-venv ;;
+                fedora|rhel) sudo dnf install -y python3-virtualenv || true ;;
+                alpine) sudo apk add --no-cache py3-virtualenv || true ;;
+            esac
+            python3 -m venv venv || { echo "❌ venv 创建失败，请手动解决。"; exit 1; }
+        fi
+        echo "✅ venv 创建成功。"
+    fi
+    source venv/bin/activate
+    pip install --upgrade pip
+    if [ -f requirements.txt ]; then
+        pip install -r requirements.txt
+    else
+        pip install lark-oapi pydantic pydantic-settings aiosqlite croniter
+    fi
+    echo "✅ 依赖安装完成。"
+    echo ""
+
+    # ---------- PM2 启动 ----------
+    echo "🚀 准备启动服务..."
+    read -r -p "是否立即用 PM2 启动 ${PM2_NAME} 服务？[Y/n]: " start_pm2
+    if [[ ! "$start_pm2" =~ ^[Nn]$ ]]; then
+        if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+            pm2 restart "$PM2_NAME"
+        else
+            pm2 start venv/bin/python3 --name "$PM2_NAME" -- main.py
+        fi
+        pm2 save || true
+
+        read -r -p "是否配置开机自启？[Y/n]: " setup_startup
+        if [[ ! "$setup_startup" =~ ^[Nn]$ ]]; then
+            echo "👉 执行 pm2 startup（将输出需要 sudo 的引导命令，请输入开机密码）："
+            STARTUP_CMD="$(pm2 startup 2>&1 | grep -E 'sudo|launchctl' || true)"
+            if [ -n "$STARTUP_CMD" ]; then
+                eval "$STARTUP_CMD" || true
+                pm2 save || true
+                echo "✅ 开机自启配置完成。"
+            else
+                echo "⚠️ 未能自动解析 startup 命令，请手动执行上方提示。"
+            fi
+        fi
+        echo ""
+        echo "🎉 部署完成！机器人已上线。"
+        echo "👉 日志: pm2 logs $PM2_NAME"
+        echo "👉 重启: pm2 restart $PM2_NAME"
+    else
+        echo "⏭️ 跳过启动。稍后手动运行: pm2 start venv/bin/python3 --name \"$PM2_NAME\" -- main.py"
+    fi
+}
+
+main "$@"

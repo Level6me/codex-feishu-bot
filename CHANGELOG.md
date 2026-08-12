@@ -20,6 +20,12 @@
 - 定时任务真实端到端：30s 倒计时任务成功触发并推送执行报告卡片。
 - 功能冻结基线打标：`v1.0-freeze-base`；回归清单见 `REGRESSION_CHECKLIST.md`。
 
+### ⚙️ 工程化完善（2026-08-12 补充）
+- **多平台部署脚本**：`install.sh` 自动检测操作系统与包管理器（macOS / Debian·Ubuntu / Fedora·RHEL / Arch / Alpine），macOS 用户级 npm 安装 pm2 与 Codex CLI（免 sudo），开机自启按平台适配。
+- **平台定位**：项目为多平台架构；树莓派 GPIO 仅为可选插件（`rpi_gpio_status`），非树莓派自动 Mock 降级，不影响其他平台。
+- **架构模块化（阶段 5）**：main.py 1395→99 行，handlers + cards 分层，38 卡片方法快照零漂移。
+- **工程化对齐（阶段 6）**：Dockerfile/compose、.dockerignore、DB_FILE 可配置。
+
 ## [v2.x] - 2026-07
 
 ### 🚀 新增功能
