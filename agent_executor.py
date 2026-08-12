@@ -15,7 +15,7 @@ from multimodal import extract_and_upload_resources
 from logger import log
 import stats
 
-STALL_TIMEOUT = 300
+STALL_TIMEOUT = 600
 FEISHU_TIMEOUT = 30
 SAVE_TIMEOUT = 3
 
@@ -165,7 +165,7 @@ def _event_action(event):
         return _summarize_command(item.get("command") or item.get("text") or item.get("content") or "")
     if kind in ("file_change", "patch"):
         return "更新文件"
-    if kind in ("mcp_tool_call", "tool_call"):
+    if kind in ("mcp_tool_call", "tool_call", "custom_tool_call"):
         return _summarize_tool(item)
     return ""
 
@@ -181,18 +181,20 @@ def _agent_text(event):
 async def execute_codex(
     chat_id, user_text, message_id, bot_reply_msg_id, session_data,
     is_new_conversation, system_instruction, final_prompt, downloaded_file_name,
-    download_success, running_processes, image_paths=None,
+    download_success, running_processes, image_paths=None, role="admin", silent=False,
 ):
     loop = asyncio.get_running_loop()
     project = session_data.get("project")
     cwd = project if project and project not in ("Default",) and os.path.isdir(project) else None
     thread_id = session_data.get("codex_conversation", "")
     prompt = system_instruction + final_prompt
+    # 权限联动：管理员/未知角色保持完整沙箱；普通用户强制受限工作区沙箱
+    sandbox = "danger-full-access" if role == "admin" else "workspace-write"
     if thread_id:
         cmd = [CODEX_BIN, "exec", "resume", thread_id, "--json", "--skip-git-repo-check",
-               "-c", 'sandbox_mode="danger-full-access"']
+               "-c", f'sandbox_mode="{sandbox}"']
     else:
-        cmd = [CODEX_BIN, "exec", "--json", "--sandbox", "danger-full-access", "--skip-git-repo-check"]
+        cmd = [CODEX_BIN, "exec", "--json", "--sandbox", sandbox, "--skip-git-repo-check"]
         if cwd:
             cmd.extend(["--cd", cwd])
     model = session_data.get("codex_model") or CODEX_MODEL
@@ -212,6 +214,8 @@ async def execute_codex(
             preexec_fn=os.setsid,
         )
     except FileNotFoundError:
+        if silent:
+            return True, f"❌ 未找到 Codex CLI（`{CODEX_BIN}`）。"
         err_card = CardBuilder.build_ai_response(
             f"❌ 未找到 Codex CLI（`{CODEX_BIN}`）。请在服务器上安装 codex 并确认 PATH 或 CODEX_BIN 配置。",
             is_error=True,
@@ -227,14 +231,15 @@ async def execute_codex(
 
     running_processes[chat_id] = process
 
-    typing_card = CardBuilder.build_typing_indicator(downloaded_file_name, download_success, user_text)
-    try:
-        if bot_reply_msg_id:
-            await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, typing_card)
-        else:
-            bot_reply_msg_id = await _feishu_call(loop, send_interactive_card_sdk, message_id, typing_card)
-    except Exception as e:
-        log.error(f"Failed to send typing card: {e}")
+    if not silent:
+        typing_card = CardBuilder.build_typing_indicator(downloaded_file_name, download_success, user_text)
+        try:
+            if bot_reply_msg_id:
+                await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, typing_card)
+            else:
+                bot_reply_msg_id = await _feishu_call(loop, send_interactive_card_sdk, message_id, typing_card)
+        except Exception as e:
+            log.error(f"Failed to send typing card: {e}")
 
     replies, errors, stdout_errors = [], [], []
     latest_action = ""
@@ -288,7 +293,9 @@ async def execute_codex(
                 last_progress_time = time.time()
 
     async def consume_stderr():
+        nonlocal last_progress_time
         while raw := await process.stderr.readline():
+            last_progress_time = time.time()
             errors.append(raw.decode("utf-8", errors="replace"))
 
     stdout_task = asyncio.create_task(consume_stdout())
@@ -317,7 +324,7 @@ async def execute_codex(
                     pass
                 break
 
-            if bot_reply_msg_id and now >= next_patch_time:
+            if not silent and bot_reply_msg_id and now >= next_patch_time:
                 card = (
                     CardBuilder.build_tool_indicator(latest_action, user_text, downloaded_file_name, download_success, seconds)
                     if latest_action
@@ -368,6 +375,14 @@ async def execute_codex(
             log.warning(f"extract_and_upload_resources failed: {e}")
         stats.record_tokens(len(user_text) + len(reply))
 
+    # Run plugin on_after_ai hooks (plugins may post-process the reply)
+    try:
+        from plugin_manager import plugin_manager
+        if plugin_manager.plugins:
+            reply = await plugin_manager.dispatch_after_ai(reply, chat_id, session_data)
+    except Exception as e:
+        log.warning(f"dispatch_after_ai failed: {e}")
+
     choice_card_data = None
     if not failed and reply:
         choice_pattern = re.compile(r'\[CHOICE_CARD\]\s*Q:\s*(.*?)\n(.*?)\s*\[/CHOICE_CARD\]', re.DOTALL | re.IGNORECASE)
@@ -381,22 +396,25 @@ async def execute_codex(
             if options:
                 choice_card_data = {"question": question, "options": options}
 
-    final_card = CardBuilder.build_ai_response(
-        reply, choice_card_data=choice_card_data,
-        current_model=model or "Codex",
-        current_project=session_data.get("project", "Default"), is_error=failed, is_streaming=False,
-    )
-    try:
-        if bot_reply_msg_id:
-            await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, final_card)
-        else:
-            await _feishu_call(loop, send_interactive_card_sdk, message_id, final_card)
-    except Exception as e:
-        log.error(f"Final card failed, falling back to plain text: {e}")
+    if not silent:
+        final_card = CardBuilder.build_ai_response(
+            reply, choice_card_data=choice_card_data,
+            current_model=model or "Codex",
+            current_project=session_data.get("project", "Default"), is_error=failed, is_streaming=False,
+        )
         try:
-            await _feishu_call(loop, send_reply_sdk, message_id, reply[:28000])
-        except Exception as e2:
-            log.error(f"Plain text fallback also failed: {e2}")
+            if bot_reply_msg_id:
+                await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, final_card)
+            else:
+                await _feishu_call(loop, send_interactive_card_sdk, message_id, final_card)
+        except Exception as e:
+            log.error(f"Final card failed, falling back to plain text: {e}")
+            try:
+                await _feishu_call(loop, send_reply_sdk, message_id, reply[:28000])
+            except Exception as e2:
+                log.error(f"Plain text fallback also failed: {e2}")
+    if silent:
+        return failed, reply
     return failed
 
 

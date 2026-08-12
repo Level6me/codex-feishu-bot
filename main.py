@@ -17,10 +17,25 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTr
 from config import APP_ID, APP_SECRET, SESSION_FILE, PROFILE_FILE, CODEX_BIN, ALLOWED_USERS, ALLOWED_CHATS, BASE_DIR, AGENT_BACKEND
 from database import get_session_async, get_profile_async, save_session_async, get_session_sync, save_session_sync, save_profile_async
 from multimodal import extract_and_upload_resources
-from lark_client import api_client, send_reply_sdk, send_interactive_card_sdk, patch_interactive_card_sdk, download_message_resource_sdk, set_emoji_sdk, delete_emoji_sdk
+from lark_client import (
+    api_client, send_reply_sdk, send_interactive_card_sdk, patch_interactive_card_sdk,
+    download_message_resource_sdk, set_emoji_sdk, delete_emoji_sdk,
+    send_card_to_chat_async, send_text_to_chat_async,
+)
 from commands import handle_slash_command
 from logger import log
 from card_builder import CardBuilder
+from utils.auth import (
+    allow_message,
+    get_admin_chat_id,
+    get_auth_session,
+    get_role,
+    is_bootstrapped,
+    request_access,
+    save_auth_session,
+    try_bootstrap_admin,
+    resolve_display_name,
+)
 import stats
 from agent_executor import execute_agent
 from garbage_collection import garbage_collector
@@ -290,6 +305,9 @@ async def _process_single_task(chat_id, task):
     current_proj = session_data.get("project", "默认")
     system_instruction = f"[System Rule: MUST ALWAYS communicate, reply, explain, and write responses in Simplified Chinese (简体中文). Any English text in the response must be limited to code syntax or technical names only. If you need the user to make a choice, format your options inside [CHOICE_CARD] Q: <Question> \n - <Option1> \n - <Option2> [/CHOICE_CARD] tags. NEVER ask normal text multi-choice questions. ONLY output plain text choices, avoid complex formatting inside choices.]\n\n"
     
+    # 注入长任务执行规范：避免 30 秒截断 + write_stdin 轮询导致停滞检测误杀
+    system_instruction += "[Agent 执行规范]\n- 执行可能超过 30 秒的长命令（如 scp、ssh、cargo build、编译部署、git push 大仓库等）时，请在 exec_command 中直接设置足够的 yield_time_ms（建议 600000），一次性等待命令完成。\n- 不要依赖 exec_command 30 秒截断返回 session_id 后用 write_stdin 反复轮询等待（write_stdin 等待期间无 stdout 事件，超过 600 秒会被停滞检测误杀）。\n- 若命令确实需要后台长时间运行，请先向用户发送一条说明消息，再启动命令，并在下次任务中检查结果。\n\n"
+    
     # 注入当前活跃项目环境参数
     system_instruction += f"[System Active Project Context]\n- Current active project workspace path is: {current_proj}\n- All file reads, writes, and analysis commands you execute should target this active workspace directory.\n\n"
     
@@ -306,6 +324,14 @@ async def _process_single_task(chat_id, task):
         system_instruction += f"[User's Permanent Notes / 备忘录]\n{notes_block}\n\n"
     
     # Load long-term memory if this is a new conversation
+    # Run plugin on_before_ai hooks (plugins may modify prompt / session_data)
+    from plugin_manager import plugin_manager
+    if plugin_manager.plugins:
+        try:
+            user_text, session_data = await plugin_manager.dispatch_before_ai(user_text, chat_id, session_data)
+        except Exception as e:
+            log.warning(f"dispatch_before_ai failed: {e}")
+
     final_prompt = user_text
     is_new_conversation = not session_data.get("codex_conversation" if AGENT_BACKEND == "codex" else "conversation")
     if is_new_conversation:
@@ -320,7 +346,8 @@ async def _process_single_task(chat_id, task):
             execute_agent(
                 chat_id, user_text, message_id, bot_reply_msg_id, session_data,
                 is_new_conversation, system_instruction, final_prompt, downloaded_file_name,
-                download_success, running_processes, image_paths=image_paths
+                download_success, running_processes, image_paths=image_paths,
+                role=get_role(chat_id),
             ),
             timeout=2000,
         )
@@ -495,6 +522,284 @@ async def _handle_message_async_internal(message_id, chat_id, message_type, cont
     await dispatch_task(chat_id, message_id, message_type, content_json, content_raw, raw_text)
 
 
+def _extract_text(message_type, content_raw):
+    if message_type == "text" and isinstance(content_raw, str):
+        try:
+            parsed = json.loads(content_raw)
+            if isinstance(parsed, dict):
+                return (parsed.get("text") or "").strip()
+        except Exception:
+            pass
+    return ""
+
+
+async def _handle_auth_request(chat_id, chat_type, sender_open_id, message_text):
+    """Guest /auth flow: persist request, resolve name, notify admin."""
+    status = request_access(chat_id, chat_type, sender_open_id, message_text)
+    if status == "ok":
+        display = await resolve_display_name(chat_id, chat_type, sender_open_id)
+        if display:
+            sess = get_auth_session(chat_id) or {}
+            sess["display_name"] = display
+            save_auth_session(sess)
+
+        admin_id = get_admin_chat_id()
+        if admin_id:
+            sess = get_auth_session(chat_id) or {}
+            await send_card_to_chat_async(admin_id, CardBuilder.build_auth_request_card(sess))
+            log.info(f"[auth] access request from {chat_id} notified admin {admin_id}")
+        await send_text_to_chat_async(chat_id, "📨 已向管理员发送授权申请，请等待审批。")
+    elif status == "rate":
+        await send_text_to_chat_async(chat_id, "⏳ 申请过于频繁，请 10 分钟后再试。")
+    elif status == "already":
+        await send_text_to_chat_async(chat_id, "✅ 当前会话已授权，无需重复申请。")
+    # admin / banned: 静默
+
+
+async def _handle_guest_message(chat_id, chat_type, sender_open_id, role, message_type, content_raw):
+    """Silent mode for guests/pending chats:
+    - /auth triggers an access request
+    - pending chats stay fully silent while awaiting approval
+    - guests get a one-time hint per 24h, then silent"""
+    text = _extract_text(message_type, content_raw)
+    if text.startswith("/auth"):
+        await _handle_auth_request(chat_id, chat_type, sender_open_id, text)
+        return
+    if role == "pending":
+        return
+
+    now = int(time.time())
+    sess = get_auth_session(chat_id) or {}
+    last_hint = sess.get("last_hint_at") or 0
+    if now - last_hint >= 86400:
+        sess["chat_id"] = chat_id
+        sess["chat_type"] = chat_type
+        sess["sender_open_id"] = sender_open_id
+        sess["last_hint_at"] = now
+        sess["updated_at"] = now
+        save_auth_session(sess)
+        await send_card_to_chat_async(chat_id, CardBuilder.build_auth_hint_card())
+
+
+async def _admin_welcome(chat_id):
+    await send_card_to_chat_async(chat_id, CardBuilder.build_admin_welcome_card())
+
+
+async def _rate_hint(chat_id):
+    await send_card_to_chat_async(chat_id, CardBuilder.build_rate_limit_card())
+
+
+def _refresh_auth_panel(card_message_id):
+    """Rebuild and patch the admin management panel card."""
+    from database import list_auth_sessions
+    from utils.auth import start_display_name_refresh
+    sessions = list_auth_sessions()
+    task = start_display_name_refresh(sessions)
+    try:
+        asyncio.run(asyncio.wait_for(asyncio.shield(task), timeout=3.0))
+    except Exception:
+        pass
+    return patch_interactive_card_sdk(card_message_id, CardBuilder.build_user_panel_card(list_auth_sessions()))
+
+
+def _handle_auth_card_action(action_value, chat_id, card_message_id):
+    """Handle admin auth-management card actions. Returns P2CardActionTriggerResponse."""
+    from card_builder import TIER_LABELS
+    from utils.auth import SCOPE_TIERS, is_admin, set_session_role
+
+    if not is_admin(chat_id):
+        return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "仅管理员可执行此操作。"}})
+
+    action = action_value.get("action")
+    target_chat = action_value.get("chat_id", "")
+
+    if action == "auth_approve":
+        tier = action_value.get("tier", "basic")
+        scopes = list(SCOPE_TIERS.get(tier, SCOPE_TIERS["basic"]))
+        tier_label = TIER_LABELS.get(tier, TIER_LABELS["basic"])
+        if main_loop and main_loop.is_running():
+            async def do_approve():
+                set_session_role(target_chat, "user", scopes, operator=chat_id)
+                await send_card_to_chat_async(
+                    target_chat,
+                    CardBuilder.build_auth_result_card(True, f"✅ 授权成功（{tier_label}）。现在可以使用该机器人了。"),
+                )
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_approve(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": f"已授权（{tier_label}）"}})
+
+    if action == "auth_deny":
+        if main_loop and main_loop.is_running():
+            async def do_deny():
+                set_session_role(target_chat, "guest", [], operator=chat_id)
+                await send_card_to_chat_async(
+                    target_chat,
+                    CardBuilder.build_auth_result_card(False, "您的权限申请已被管理员拒绝。"),
+                )
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_deny(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "已拒绝该申请"}})
+
+    if action == "auth_ban":
+        if main_loop and main_loop.is_running():
+            async def do_ban():
+                set_session_role(target_chat, "banned", [], operator=chat_id)
+                await send_card_to_chat_async(
+                    target_chat,
+                    CardBuilder.build_auth_result_card(False, "该会话已被管理员加入黑名单。"),
+                )
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_ban(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "已拉黑该会话"}})
+
+    if action == "user_action":
+        op = action_value.get("op", "")
+        if main_loop and main_loop.is_running():
+            async def do_user_action():
+                if op == "revoke":
+                    set_session_role(target_chat, "guest", [], operator=chat_id)
+                elif op == "promote":
+                    set_session_role(target_chat, "admin", [], operator=chat_id)
+                elif op == "unban":
+                    set_session_role(target_chat, "guest", [], operator=chat_id)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_user_action(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "操作成功"}})
+
+    if action == "user_edit":
+        if main_loop and main_loop.is_running():
+            async def do_edit():
+                sess = get_auth_session(target_chat) or {"chat_id": target_chat}
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: patch_interactive_card_sdk(card_message_id, CardBuilder.build_user_edit_card(sess)),
+                )
+            asyncio.run_coroutine_threadsafe(do_edit(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "正在编辑该会话权限"}})
+
+    if action == "user_set_tier":
+        tier = action_value.get("tier", "basic")
+        tier_label = TIER_LABELS.get(tier, TIER_LABELS["basic"])
+        scopes = list(SCOPE_TIERS.get(tier, SCOPE_TIERS["basic"]))
+        set_session_role(target_chat, "user", scopes, operator=chat_id)
+        if main_loop and main_loop.is_running():
+            async def do_set_tier():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_set_tier(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": f"已设为{tier_label}"}})
+
+    if action == "user_edit_cancel":
+        if main_loop and main_loop.is_running():
+            async def do_cancel_edit():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_auth_panel(card_message_id))
+            asyncio.run_coroutine_threadsafe(do_cancel_edit(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "已取消编辑"}})
+
+    if action == "user_page":
+        page = int(action_value.get("page", 1))
+        if main_loop and main_loop.is_running():
+            async def do_user_page():
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: patch_interactive_card_sdk(
+                        card_message_id,
+                        CardBuilder.build_user_panel_card(list_auth_sessions(), page=page),
+                    ),
+                )
+            asyncio.run_coroutine_threadsafe(do_user_page(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "已翻页"}})
+
+    return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "未知操作"}})
+
+
+def _handle_cron_card_action(action_value, chat_id, card_message_id):
+    """Handle scheduled-task (cron) card actions."""
+    from database import get_all_cron_tasks, get_cron_task, update_cron_task_status, delete_cron_task
+    from cron_engine import cron_engine
+
+    action = action_value.get("action")
+
+    if action == "switch_cron_tab":
+        tab = action_value.get("tab", "user")
+        if main_loop and main_loop.is_running():
+            async def do_switch_cron():
+                tasks = await asyncio.get_running_loop().run_in_executor(None, lambda: get_all_cron_tasks(chat_id))
+                session_data = await get_session_async(chat_id)
+                new_card = CardBuilder.build_cron_panel_card(tasks, active_tab=tab, session_data=session_data)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: patch_interactive_card_sdk(card_message_id, new_card))
+            asyncio.run_coroutine_threadsafe(do_switch_cron(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": f"已切换至 {'用户' if tab == 'user' else '系统'} 任务面板"}})
+
+    if action == "open_cron_panel":
+        if main_loop and main_loop.is_running():
+            async def do_open_cron():
+                from lark_client import send_card_to_chat_sdk
+                tasks = await asyncio.get_running_loop().run_in_executor(None, lambda: get_all_cron_tasks(chat_id))
+                session_data = await get_session_async(chat_id)
+                new_card = CardBuilder.build_cron_panel_card(tasks, active_tab="user", session_data=session_data)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_card_to_chat_sdk(chat_id, new_card))
+            asyncio.run_coroutine_threadsafe(do_open_cron(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "正在打开计划任务中心..."}})
+
+    if action == "open_cron_create":
+        if main_loop and main_loop.is_running():
+            async def do_open_create():
+                from commands import PendingCommand
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = PendingCommand.CRON_ADD.value
+                await save_session_async(chat_id, session_data)
+
+                msg = (
+                    "⏱️ **新建计划任务**\n\n"
+                    "请直接在此回复 3 段信息，中间用竖线 `|` 隔开：\n"
+                    "`任务名称 | 触发规则(Cron表达式/秒数) | 执行 Prompt`\n\n"
+                    "📌 **示例 1 (标准 Cron 每天 09:00 执行)**：\n"
+                    "`每日总结 | 0 9 * * * | 检查当前工作区的 Git 提交并生成日报`\n\n"
+                    "📌 **示例 2 (倒计时 10 分钟后一次性执行)**：\n"
+                    "`磁盘压测汇报 | 600s | 提取 /tmp/iscsi_stab_test.log 并分析报告`"
+                )
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, msg))
+            asyncio.run_coroutine_threadsafe(do_open_create(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "请发送格式为 '名称 | 规则 | Prompt' 的任务文本"}})
+
+    if action == "toggle_cron_active":
+        task_id = action_value.get("task_id")
+        is_active = bool(action_value.get("is_active", True))
+        if main_loop and main_loop.is_running():
+            async def do_toggle_cron():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: update_cron_task_status(task_id, is_active))
+                tasks = await asyncio.get_running_loop().run_in_executor(None, lambda: get_all_cron_tasks(chat_id))
+                session_data = await get_session_async(chat_id)
+                new_card = CardBuilder.build_cron_panel_card(tasks, active_tab="user", session_data=session_data)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: patch_interactive_card_sdk(card_message_id, new_card))
+            asyncio.run_coroutine_threadsafe(do_toggle_cron(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": f"任务已{'启用' if is_active else '暂停'}"}})
+
+    if action == "delete_cron_task":
+        task_id = action_value.get("task_id")
+        if main_loop and main_loop.is_running():
+            async def do_delete_cron():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: delete_cron_task(task_id))
+                tasks = await asyncio.get_running_loop().run_in_executor(None, lambda: get_all_cron_tasks(chat_id))
+                session_data = await get_session_async(chat_id)
+                new_card = CardBuilder.build_cron_panel_card(tasks, active_tab="user", session_data=session_data)
+                await asyncio.get_running_loop().run_in_executor(None, lambda: patch_interactive_card_sdk(card_message_id, new_card))
+            asyncio.run_coroutine_threadsafe(do_delete_cron(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "计划任务已物理删除！"}})
+
+    if action == "run_cron_now":
+        task_id = action_value.get("task_id")
+        if main_loop and main_loop.is_running():
+            async def do_run_now():
+                task = await asyncio.get_running_loop().run_in_executor(None, lambda: get_cron_task(task_id))
+                if task:
+                    asyncio.create_task(cron_engine._run_task_wrapper(task))
+            asyncio.run_coroutine_threadsafe(do_run_now(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "已触发即刻运行计划任务！"}})
+
+    return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "未知操作"}})
+
+
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     if not data or not data.event or not data.event.message:
         log.warning("Received malformed message event")
@@ -507,6 +812,10 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     chat_id = data.event.message.chat_id
     message_type = data.event.message.message_type
     content_raw = data.event.message.content
+    chat_type = data.event.message.chat_type or "p2p"
+    sender_open_id = ""
+    if data.event.sender and data.event.sender.sender_id:
+        sender_open_id = data.event.sender.sender_id.open_id or ""
 
     if not _mark_seen(message_id):
         log.warning(f"Duplicate message ignored: message_id={message_id}")
@@ -529,7 +838,37 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     if not is_allowed:
         log.warning(f"Unauthorized message event ignored. chat_id: {chat_id}, sender_id: {sender_id if 'sender_id' in locals() else None}")
         return
-        
+
+    # Bootstrap: bind the first usable chat as admin (group allowed when
+    # AUTH_BOOTSTRAP_ALLOW_GROUP enabled, see utils/auth.py).
+    if not is_bootstrapped():
+        if try_bootstrap_admin(chat_id, chat_type):
+            log.info(f"[auth] Admin bound to chat {chat_id}")
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(_admin_welcome(chat_id), main_loop)
+        else:
+            log.info(f"[auth] Bootstrap pending; ignoring message from chat {chat_id}")
+            return
+
+    # Permission gate
+    role = get_role(chat_id, sender_open_id)
+    if role == "banned":
+        log.info(f"[auth] Banned chat {chat_id} message ignored")
+        return
+    if role in ("guest", "pending"):
+        if main_loop and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _handle_guest_message(chat_id, chat_type, sender_open_id, role, message_type, content_raw),
+                main_loop,
+            )
+        return
+
+    # Authorized chats: apply rate limiting (admins exempt).
+    if role == "user" and not allow_message(chat_id):
+        if main_loop and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(_rate_hint(chat_id), main_loop)
+        return
+
     if main_loop and main_loop.is_running():
         asyncio.run_coroutine_threadsafe(handle_message_async(message_id, chat_id, message_type, content_raw), main_loop)
     else:
@@ -541,6 +880,14 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
     action_value = data.event.action.value
     chat_id = data.event.context.open_chat_id
     card_message_id = data.event.context.open_message_id
+
+    # ---- Auth domain (admin-only card actions) ----
+    _AUTH_ACTIONS = {
+        "auth_approve", "auth_deny", "auth_ban",
+        "user_action", "user_page", "user_edit", "user_set_tier", "user_edit_cancel",
+    }
+    if action_value.get("action") in _AUTH_ACTIONS:
+        return _handle_auth_card_action(action_value, chat_id, card_message_id)
     
     # Check whitelist if configured
     is_allowed = True
@@ -555,7 +902,25 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
     if not is_allowed:
         log.warning(f"Unauthorized card action ignored. chat_id: {chat_id}, operator_id: {sender_id if 'sender_id' in locals() else None}")
         return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "您无权操作此卡片！"}})
-        
+
+    # ---- Cron domain (scheduled-task card actions) ----
+    _CRON_ACTIONS = {
+        "switch_cron_tab", "open_cron_panel", "open_cron_create",
+        "toggle_cron_active", "delete_cron_task", "run_cron_now",
+    }
+    if action_value.get("action") in _CRON_ACTIONS:
+        return _handle_cron_card_action(action_value, chat_id, card_message_id)
+
+    # ---- Plugin domain (dispatch to loaded plugins) ----
+    from plugin_manager import plugin_manager
+    plugin_action = action_value.get("action", "")
+    if plugin_action and plugin_manager.plugins:
+        if main_loop and main_loop.is_running():
+            async def _do_plugin_action():
+                await plugin_manager.dispatch_card_action(plugin_action, action_value, chat_id, card_message_id)
+            asyncio.run_coroutine_threadsafe(_do_plugin_action(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "已处理"}})
+
     if action_value.get("action") == "switch_model":
         new_model = action_value.get("model")
         
@@ -863,6 +1228,20 @@ async def main():
             
     # Start background GC task
     gc_task = asyncio.create_task(garbage_collector())
+
+    # Start cron engine (background scheduled tasks)
+    from cron_engine import cron_engine
+    cron_engine.start()
+
+    # Load plugin system
+    from plugin_manager import plugin_manager
+    plugin_manager.register_system_commands([
+        "/help", "/model", "/card", "/menu", "/project", "/note", "/notes",
+        "/status", "/context", "/quota", "/clear", "/stop", "/update", "/ping",
+        "/remember", "/memory", "/forget", "/brain", "/newproj_resolve",
+        "/user", "/auth", "/cron", "/schedule", "/plugin", "/plugins",
+    ])
+    plugin_manager.load_all_plugins()
     
     event_handler = lark.EventDispatcherHandler.builder("", "") \
         .register_p2_im_message_receive_v1(do_p2_im_message_receive_v1) \
@@ -881,6 +1260,11 @@ async def main():
 
 def cleanup(signum, frame):
     log.warning("Gracefully shutting down... killing zombie processes")
+    try:
+        from cron_engine import cron_engine
+        cron_engine.stop()
+    except Exception as e:
+        log.error(f"Failed to stop cron engine: {e}")
     for process in running_processes.values():
         try:
             pgid = os.getpgid(process.pid)

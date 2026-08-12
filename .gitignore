@@ -37,6 +37,8 @@ hello.py
 
 # Database and backups
 *.db
+*.db-shm
+*.db-wal
 *.bak
 
 *.err

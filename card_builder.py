@@ -3,6 +3,28 @@ import os
 from datetime import datetime
 from config import WORKSPACE_ROOT
 from logger import log
+from utils.auth import SCOPE_TIERS
+
+
+TIER_LABELS = {
+    "basic": "基础权限",
+    "dev": "开发权限",
+    "full": "完全权限",
+}
+
+ROLE_LABELS = {
+    "admin": "管理员",
+    "user": "已授权",
+    "pending": "待审批",
+    "guest": "未授权",
+    "banned": "已拉黑",
+}
+
+TIER_NOTES = {
+    "basic": "对话、图片/文件解析、笔记偏好",
+    "dev": "基础权限 + 项目切换、文件回传",
+    "full": "开发权限 + 执行 Shell、查看额度",
+}
 
 class CardBuilder:
     @staticmethod
@@ -1280,4 +1302,778 @@ class CardBuilder:
                 "title": {"content": "🧠 Codex 全局记忆库", "tag": "plain_text"}
             },
             "elements": elements
+        }
+
+    # ------------------------------------------------------------------
+    # Auth / permission cards (ported from upstream cards/auth.py)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _short_id(cid):
+        return str(cid or "")
+
+    @staticmethod
+    def _tier_label(scopes):
+        scope_set = set(scopes or [])
+        if not scope_set:
+            return "全部权限"
+        for tier in ("full", "dev", "basic"):
+            if scope_set >= set(SCOPE_TIERS[tier]):
+                return TIER_LABELS[tier]
+        return "自定义权限"
+
+    @staticmethod
+    def _fmt_ts(ts):
+        if not ts:
+            return "-"
+        try:
+            return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return "-"
+
+    @staticmethod
+    def build_auth_hint_card():
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "grey",
+                "title": {"content": "🔒 当前会话未授权", "tag": "plain_text"},
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": (
+                        "您好，当前飞书会话尚未获得本机器人的使用权限。\n\n"
+                        "如需使用，请发送 **`/auth`** 向管理员申请授权。"
+                    ),
+                },
+                CardBuilder._create_footer(),
+            ],
+        }
+
+    @staticmethod
+    def build_admin_welcome_card():
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "green",
+                "title": {"content": "👑 您已成为管理员", "tag": "plain_text"},
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": (
+                        "首次部署绑定成功，本会话已被设为**最高管理员权限**。\n\n"
+                        "- 其他会话发来的 `/auth` 申请会推送到这里，您可以在卡片上直接通过 / 拒绝。\n"
+                        "- 使用 **`/user`** 管理已授权用户/群。\n"
+                        "- 您的会话不受权限与限流限制。"
+                    ),
+                },
+                CardBuilder._create_footer(),
+            ],
+        }
+
+    @staticmethod
+    def build_auth_request_card(req):
+        chat_type = req.get("chat_type", "p2p")
+        chat_type_label = "私聊" if chat_type != "group" else "群聊"
+        display_name = req.get("display_name") or "（未获取到名称）"
+        if req.get("display_name") is None or not str(req.get("display_name", "")).strip():
+            display_name = CardBuilder._short_id(req.get("chat_id", "")) or "（未获取到名称）"
+        last_msg = (req.get("last_message") or "").strip() or "（无）"
+
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**{chat_type_label}会话**：`{display_name}`\n"
+                    f"**会话 ID**：`{req.get('chat_id', '')}`\n"
+                    f"**申请者**：`{req.get('sender_open_id') or '-'}`\n"
+                    f"**申请时间**：{CardBuilder._fmt_ts(req.get('last_request_at'))}\n"
+                    f"**累计申请**：{req.get('request_count') or 0} 次\n"
+                    f"**最近消息**：{last_msg}"
+                ),
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": "请选择授权档位，或拒绝该申请：",
+            },
+        ]
+
+        actions = []
+        for tier in ("basic", "dev", "full"):
+            actions.append({
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"✅ {TIER_LABELS[tier]}"},
+                "type": "primary",
+                "value": {"action": "auth_approve", "chat_id": req.get("chat_id", ""), "tier": tier},
+            })
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "❌ 拒绝"},
+            "type": "default",
+            "value": {"action": "auth_deny", "chat_id": req.get("chat_id", "")},
+        })
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "🚫 拉黑"},
+            "type": "danger",
+            "value": {"action": "auth_ban", "chat_id": req.get("chat_id", "")},
+        })
+
+        elements.append({"tag": "action", "actions": actions})
+        elements.append(CardBuilder._create_footer())
+
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "orange",
+                "title": {"content": "🔔 新的权限申请", "tag": "plain_text"},
+            },
+            "elements": elements,
+        }
+
+    @staticmethod
+    def build_auth_result_card(ok, detail=""):
+        if ok:
+            title = "✅ 授权成功"
+            template = "green"
+        else:
+            title = "⛔ 申请未通过"
+            template = "red"
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {"template": template, "title": {"content": title, "tag": "plain_text"}},
+            "elements": [
+                {"tag": "markdown", "content": detail or "管理员已处理您的权限申请。"},
+                CardBuilder._create_footer(),
+            ],
+        }
+
+    @staticmethod
+    def build_user_edit_card(sess):
+        display = (sess.get("display_name") or "").strip()
+        chat_short = CardBuilder._short_id(sess.get("chat_id", ""))
+        if display and display != chat_short and not display.startswith("oc_"):
+            who = f"**{display}** (`{chat_short}`)"
+        else:
+            who = f"**{display or chat_short or '未知会话'}**"
+
+        current_tier = CardBuilder._tier_label(sess.get("scopes") or [])
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"✏️ 正在编辑：{who}\n"
+                    f"当前权限级别：**{current_tier}**\n\n"
+                    "请选择新的权限级别："
+                ),
+            },
+            {"tag": "hr"},
+        ]
+
+        for tier in ("basic", "dev", "full"):
+            elements.append({
+                "tag": "markdown",
+                "content": f"**{TIER_LABELS[tier]}**：{TIER_NOTES[tier]}",
+            })
+            elements.append({
+                "tag": "action",
+                "actions": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": f"设为{TIER_LABELS[tier]}"},
+                    "type": "primary",
+                    "value": {"action": "user_set_tier", "chat_id": sess.get("chat_id", ""), "tier": tier},
+                }],
+            })
+
+        elements.append({
+            "tag": "action",
+            "actions": [{
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "取消"},
+                "type": "default",
+                "value": {"action": "user_edit_cancel"},
+            }],
+        })
+        elements.append(CardBuilder._create_footer())
+
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "turquoise",
+                "title": {"content": "✏️ 编辑会话权限", "tag": "plain_text"},
+            },
+            "elements": elements,
+        }
+
+    @staticmethod
+    def build_user_panel_card(sessions, page=1, page_size=6):
+        total = len(sessions)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * page_size
+        page_sessions = sessions[start:start + page_size]
+
+        elements = [
+            {
+                "tag": "markdown",
+                "content": f"**会话管理面板**（第 {page}/{total_pages} 页，共 {total} 个会话）",
+            }
+        ]
+
+        for sess in page_sessions:
+            role = sess.get("role", "guest")
+            chat_type = sess.get("chat_type", "p2p")
+            label = ROLE_LABELS.get(role, role)
+            display = (sess.get("display_name") or "").strip()
+            chat_short = CardBuilder._short_id(sess.get("chat_id", ""))
+            if display and display != chat_short and not display.startswith("oc_"):
+                name_part = f"**{display}** (`{chat_short}`)"
+            else:
+                name_part = f"**{display or chat_short or '未知会话'}**"
+            scopes = sess.get("scopes") or []
+
+            content = (
+                f"{name_part}\n"
+                f"类型：{'群聊' if chat_type == 'group' else '私聊'} | 角色：**{label}** | 权限级别：**{CardBuilder._tier_label(scopes)}**\n"
+                f"更新时间：{CardBuilder._fmt_ts(sess.get('updated_at'))}"
+            )
+
+            row_actions = []
+            if role == "pending":
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "✅ 通过"},
+                    "type": "primary",
+                    "value": {"action": "auth_approve", "chat_id": sess.get("chat_id", ""), "tier": "basic"},
+                })
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "❌ 拒绝"},
+                    "type": "default",
+                    "value": {"action": "auth_deny", "chat_id": sess.get("chat_id", "")},
+                })
+            elif role == "user":
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "撤销"},
+                    "type": "default",
+                    "value": {"action": "user_action", "op": "revoke", "chat_id": sess.get("chat_id", "")},
+                })
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "编辑"},
+                    "type": "primary",
+                    "value": {"action": "user_edit", "chat_id": sess.get("chat_id", "")},
+                })
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "🚫 拉黑"},
+                    "type": "danger",
+                    "value": {"action": "auth_ban", "chat_id": sess.get("chat_id", "")},
+                })
+            elif role == "banned":
+                row_actions.append({
+                    "tag": "button", "text": {"tag": "plain_text", "content": "解除拉黑"},
+                    "type": "default",
+                    "value": {"action": "user_action", "op": "unban", "chat_id": sess.get("chat_id", "")},
+                })
+
+            left_col = {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [{"tag": "markdown", "content": content}],
+            }
+            right_col = {
+                "tag": "column",
+                "width": "auto",
+                "elements": list(row_actions),
+            }
+            elements.append({
+                "tag": "column_set",
+                "flex_mode": "none",
+                "columns": [left_col, right_col],
+            })
+            elements.append({"tag": "hr"})
+
+        if not page_sessions:
+            elements.append({"tag": "markdown", "content": "📭 暂无会话记录。"})
+
+        page_actions = []
+        if page > 1:
+            page_actions.append({
+                "tag": "button", "text": {"tag": "plain_text", "content": "◀️ 上一页"},
+                "type": "default",
+                "value": {"action": "user_page", "page": page - 1},
+            })
+        if page < total_pages:
+            page_actions.append({
+                "tag": "button", "text": {"tag": "plain_text", "content": "下一页 ▶️"},
+                "type": "default",
+                "value": {"action": "user_page", "page": page + 1},
+            })
+        if page_actions:
+            elements.append({"tag": "action", "actions": page_actions})
+
+        elements.append(CardBuilder._create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "blue",
+                "title": {"content": "👥 用户 / 群权限管理", "tag": "plain_text"},
+            },
+            "elements": elements,
+        }
+
+    @staticmethod
+    def build_rate_limit_card():
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "yellow",
+                "title": {"content": "⏳ 操作过于频繁", "tag": "plain_text"},
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": "请求过于频繁，请稍等片刻再试。",
+                },
+                CardBuilder._create_footer(),
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # Cron / scheduled-task cards (ported from upstream cards/cron.py)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_ts(ts):
+        if not ts or ts <= 0:
+            return "尚未运行"
+        return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+
+    @staticmethod
+    def build_cron_panel_card(tasks, active_tab="user", session_data=None):
+        user_tasks = [t for t in tasks if t.get('category') == 'user']
+        sys_tasks = [t for t in tasks if t.get('category') == 'system']
+        displayed_tasks = user_tasks if active_tab == 'user' else sys_tasks
+
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**⏱️ 计划任务管理中心 (Cron Center)**\n"
+                    f"包含用户创建的周期指令与系统级后台任务。"
+                    f"选中的分类：**{'👤 用户主动任务' if active_tab == 'user' else '⚙️ 系统后台任务'}**"
+                ),
+            }
+        ]
+
+        header_actions = [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "👤 用户任务" if active_tab != 'user' else "🔵 👤 用户任务"},
+                "type": "primary" if active_tab == 'user' else "default",
+                "value": {"action": "switch_cron_tab", "tab": "user"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "⚙️ 系统任务" if active_tab != 'system' else "🔵 ⚙️ 系统任务"},
+                "type": "primary" if active_tab == 'system' else "default",
+                "value": {"action": "switch_cron_tab", "tab": "system"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "➕ 新建任务"},
+                "type": "primary",
+                "value": {"action": "open_cron_create"},
+            },
+        ]
+        elements.append({"tag": "action", "layout": "bisect", "actions": header_actions})
+        elements.append({"tag": "hr"})
+
+        if not displayed_tasks:
+            elements.append({
+                "tag": "markdown",
+                "content": (
+                    f"*(暂无{'用户主动' if active_tab == 'user' else '系统后台'}计划任务)*\n"
+                    "点击上方 **[ ➕ 新建任务 ]** 即可添加一个定时任务！"
+                ),
+            })
+        else:
+            for t in displayed_tasks:
+                t_id = t.get('id')
+                is_active = bool(t.get('is_active', 1))
+                status_icon = "🟢 启用中" if is_active else "🔴 已暂停"
+                cron_expr = t.get('cron_expr', '')
+                task_type = "标准 Cron" if t.get('task_type') == 'cron' else "延迟倒计时"
+                proj = t.get('project_path', '')
+                proj_name = os.path.basename(proj) if proj else "默认工作区"
+
+                last_run = CardBuilder._format_ts(t.get('last_run_at'))
+                next_run = CardBuilder._format_ts(t.get('next_run_at'))
+                prompt_preview = t.get('prompt', '')
+                if len(prompt_preview) > 60:
+                    prompt_preview = prompt_preview[:60] + "..."
+
+                task_md = (
+                    f"**{t.get('name', '未命名任务')}** (`{t_id}`) | 状态：**{status_icon}**\n"
+                    f"• **触发规则**：`{cron_expr}` ({task_type})\n"
+                    f"• **执行指令**：`{prompt_preview}`\n"
+                    f"• **关联项目**：`{proj_name}` | **累计运行**：{t.get('run_count', 0)} 次\n"
+                    f"• **上次运行**：{last_run} | **下次触发**：{next_run}"
+                )
+                elements.append({"tag": "markdown", "content": task_md})
+
+                task_actions = [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⚡ 立即触发"},
+                        "type": "default",
+                        "value": {"action": "run_cron_now", "task_id": t_id},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⏸️ 暂停" if is_active else "▶️ 启用"},
+                        "type": "default",
+                        "value": {"action": "toggle_cron_active", "task_id": t_id, "is_active": not is_active},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🗑️ 删除"},
+                        "type": "danger",
+                        "value": {"action": "delete_cron_task", "task_id": t_id},
+                    },
+                ]
+                elements.append({"tag": "action", "layout": "flow", "actions": task_actions})
+                elements.append({"tag": "hr"})
+
+        elements.append(CardBuilder._create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": "⏱️ 计划任务管理中心 (Cron Center)"},
+                "template": "blue",
+            },
+            "elements": elements,
+        }
+
+    @staticmethod
+    def build_cron_start_card(task_data):
+        t_name = task_data.get('name', '计划任务')
+        t_id = task_data.get('id', '')
+        cat = "👤 用户任务" if task_data.get('category') == 'user' else "⚙️ 系统任务"
+        expr = task_data.get('cron_expr', '')
+        prompt = task_data.get('prompt', '')
+
+        content = (
+            f"**▶️ 计划任务已触发，正在后台启动执行...**\n\n"
+            f"• **任务名称**：**{t_name}** (`{t_id}`)\n"
+            f"• **任务类别**：{cat} | **触发规则**：`{expr}`\n"
+            f"• **执行指令**：`{prompt}`\n\n"
+            f"⏳ *正在运行 Agent 分析并生成结果，请稍候...*"
+        )
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": f"⏰ 触发提示: {t_name}"},
+                "template": "orange",
+            },
+            "elements": [{"tag": "markdown", "content": content}],
+        }
+
+    @staticmethod
+    def build_cron_execution_card(task_data, result_text, is_error=False, duration_ms=0):
+        t_name = task_data.get('name', '计划任务')
+        t_id = task_data.get('id', '')
+        cat = "👤 用户任务" if task_data.get('category') == 'user' else "⚙️ 系统任务"
+        dur_sec = f"{duration_ms / 1000.0:.1f} 秒" if duration_ms > 0 else "< 1 秒"
+
+        header_color = "red" if is_error else "green"
+        status_title = "❌ 计划任务执行异常" if is_error else "✅ 计划任务报告"
+
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**📌 任务基础信息**\n"
+                    f"• **任务名称**：**{t_name}** (`{t_id}`) | **类别**：{cat}\n"
+                    f"• **完成耗时**：{dur_sec} | **完成时间**：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                ),
+            },
+            {"tag": "hr"},
+            {"tag": "markdown", "content": f"**📊 执行结果与报告**\n\n{result_text}"},
+            {"tag": "hr"},
+            {
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔄 再次运行"},
+                        "type": "primary",
+                        "value": {"action": "run_cron_now", "task_id": t_id},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⚙️ 管理任务中心"},
+                        "type": "default",
+                        "value": {"action": "open_cron_panel"},
+                    },
+                ],
+            },
+        ]
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": f"{status_title}: {t_name}"},
+                "template": header_color,
+            },
+            "elements": elements,
+        }
+
+    @staticmethod
+    def build_cron_created_card(task_data):
+        t_name = task_data.get('name', '计划任务')
+        t_id = task_data.get('id', '')
+        cat = "👤 用户主动任务" if task_data.get('category') == 'user' else "⚙️ 系统后台任务"
+        expr = task_data.get('cron_expr', '')
+        task_type = "标准 Cron 表达式" if task_data.get('task_type') == 'cron' else "倒计时定时器"
+        prompt = task_data.get('prompt', '')
+
+        next_ts = task_data.get('next_run_at', 0)
+        next_str = datetime.fromtimestamp(next_ts).strftime('%Y-%m-%d %H:%M:%S') if next_ts > 0 else "算中..."
+
+        elements = [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**📌 任务基本信息**\n"
+                    f"• **任务名称**：**{t_name}** (`{t_id}`)\n"
+                    f"• **任务类别**：{cat} | **规则类型**：{task_type}\n"
+                    f"• **触发规则**：`{expr}` | **下次预计触发**：`{next_str}`"
+                ),
+            },
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**📝 预设执行 Prompt**\n`{prompt}`\n\n"
+                    "🛡️ *该任务已持久化存入数据库，中途发生重启亦可自动恢复倒计时与触发。*"
+                ),
+            },
+            {"tag": "hr"},
+            {
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⚡ 立即触发一次"},
+                        "type": "primary",
+                        "value": {"action": "run_cron_now", "task_id": t_id},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⚙️ 打开任务中心"},
+                        "type": "default",
+                        "value": {"action": "open_cron_panel"},
+                    },
+                ],
+            },
+            CardBuilder._create_footer(),
+        ]
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": f"✅ 计划任务创建成功: {t_name}"},
+                "template": "green",
+            },
+            "elements": elements,
+        }
+
+    # ------------------------------------------------------------------
+    # Plugin-center cards (ported from upstream cards/plugin.py)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def build_plugin_panel_card(plugin_list, active_tab="installed"):
+        from plugin_store import load_plugin_sources
+
+        is_installed = active_tab == "installed"
+        tab_actions = [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"{'▶ ' if is_installed else ''}📦 已安装插件 ({len(plugin_list)})"},
+                "type": "primary" if is_installed else "default",
+                "value": {"action": "switch_plugin_tab", "tab": "installed"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"{'▶ ' if not is_installed else ''}🏪 插件源与商店"},
+                "type": "primary" if not is_installed else "default",
+                "value": {"action": "switch_plugin_tab", "tab": "sources"},
+            },
+        ]
+
+        elements = [
+            {"tag": "action", "layout": "flow", "actions": tab_actions},
+            {"tag": "hr"},
+        ]
+
+        if is_installed:
+            if not plugin_list:
+                elements.append({
+                    "tag": "markdown",
+                    "content": "⚠️ *当前 `plugins/` 目录下暂无安装的插件。切换到【🏪 插件源与商店】Tab 或使用 GitHub URL 即可一键安装扩展能力。*",
+                })
+            else:
+                for p in plugin_list:
+                    pid = p.get("id", "")
+                    name = p.get("name", pid)
+                    version = p.get("version", "1.0.0")
+                    cmds = p.get("commands", [])
+                    cmd_str = ", ".join([f"`{c}`" for c in cmds]) if cmds else "无专属指令"
+                    enabled = p.get("enabled", True)
+                    status_tag = "🟢 已激活" if enabled else "⚪ 已禁用"
+
+                    elements.append({
+                        "tag": "markdown",
+                        "content": (
+                            f"**{name}** (`{pid}` v{version})\n"
+                            f"• **运行状态**：{status_tag}\n"
+                            f"• **注册指令**：{cmd_str}"
+                        ),
+                    })
+                    elements.append({
+                        "tag": "action",
+                        "layout": "flow",
+                        "actions": [
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "🔄 检查更新"},
+                                "type": "default",
+                                "value": {"action": "update_plugin", "plugin_id": pid},
+                            },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "🗑️ 物理卸载"},
+                                "type": "danger",
+                                "value": {"action": "uninstall_plugin", "plugin_id": pid},
+                            },
+                        ],
+                    })
+                    elements.append({"tag": "hr"})
+
+            elements.append({
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "📥 从 GitHub URL 安装插件"},
+                        "type": "primary",
+                        "value": {"action": "prompt_install_github"},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔄 热重载插件库 (Reload)"},
+                        "type": "default",
+                        "value": {"action": "reload_plugins"},
+                    },
+                ],
+            })
+        else:
+            load_plugin_sources()
+            elements.append({
+                "tag": "markdown",
+                "content": "**🏪 插件源与商店**\n• **当前插件源仓库**：`https://github.com/Level6me/feishu-bot-plugin`",
+            })
+            elements.append({"tag": "hr"})
+
+            try:
+                from plugin_store import fetch_remote_store_plugins
+                remote_plugins = fetch_remote_store_plugins(force_refresh=False) or []
+            except Exception:
+                remote_plugins = []
+
+            if not remote_plugins:
+                remote_plugins = [{
+                    "id": "server_health", "name": "🖥️ 服务器巡检与健康报告",
+                    "repo_url": "https://github.com/Level6me/feishu-bot-plugin",
+                    "description": "监控 CPU 负载、内存率、磁盘余量，发送 /sysinfo 即可查看",
+                }]
+
+            elements.append({"tag": "markdown", "content": f"**🌟 在线插件扩展库 (共 {len(remote_plugins)} 个插件)**"})
+            installed_ids = {p.get("id") for p in plugin_list}
+
+            for rem in remote_plugins:
+                r_id = rem["id"]
+                r_name = rem.get("name", r_id)
+                r_url = rem.get("repo_url", "https://github.com/Level6me/feishu-bot-plugin")
+                r_desc = rem.get("description", "")
+                is_installed_rem = r_id in installed_ids
+
+                btn_text = "卸载" if is_installed_rem else "安装"
+                btn_type = "danger" if is_installed_rem else "primary"
+                action_dict = (
+                    {"action": "uninstall_plugin", "plugin_id": r_id}
+                    if is_installed_rem
+                    else {"action": "install_github_repo", "repo_url": r_url, "plugin_id": r_id}
+                )
+
+                elements.append({
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 4,
+                            "elements": [{"tag": "markdown", "content": f"**{r_name}** (`{r_id}`)\n{r_desc}"}],
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "center",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {"tag": "plain_text", "content": btn_text},
+                                    "type": btn_type,
+                                    "value": action_dict,
+                                }
+                            ],
+                        },
+                    ],
+                })
+                elements.append({"tag": "hr"})
+
+            elements.append({
+                "tag": "action",
+                "layout": "flow",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔄 刷新插件列表"},
+                        "type": "primary",
+                        "value": {"action": "refresh_store_plugins"},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "➕ 添加 GitHub 插件源"},
+                        "type": "default",
+                        "value": {"action": "prompt_add_source"},
+                    },
+                ],
+            })
+
+        elements.append(CardBuilder._create_footer())
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": "🧩 机器人插件中心与应用商店"},
+                "template": "indigo",
+            },
+            "elements": elements,
         }

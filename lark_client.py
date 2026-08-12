@@ -1,12 +1,15 @@
 import json
 import os
 import tempfile
+import asyncio
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
     ReplyMessageRequest, ReplyMessageRequestBody, PatchMessageRequest,
     PatchMessageRequestBody, GetMessageResourceRequest, CreateMessageReactionRequest,
-    CreateMessageReactionRequestBody, Emoji, DeleteMessageReactionRequest
+    CreateMessageReactionRequestBody, Emoji, DeleteMessageReactionRequest,
+    CreateMessageRequest, CreateMessageRequestBody, GetChatRequest,
 )
+from lark_oapi.api.contact.v3 import GetUserRequest
 from config import APP_ID, APP_SECRET
 from logger import log
 from utils import with_retry
@@ -131,3 +134,89 @@ def download_message_resource_sdk(message_id, file_key, resource_type, output_pa
     else:
         log.error(f"[download_message_resource_sdk] Failed: {resp.msg}")
         return False
+
+
+@with_retry()
+def send_card_to_chat_sdk(chat_id, card_content):
+    """Send an interactive card as a NEW message to a chat (not a reply)."""
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("interactive")
+            .content(json.dumps(card_content))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_card_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+@with_retry()
+def send_text_to_chat_sdk(chat_id, text):
+    """Send a plain text message as a NEW message to a chat."""
+    if text and len(text) > 28000:
+        text = text[:28000] + "\n\n（内容过长已截断）"
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("text")
+            .content(json.dumps({"text": text}))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_text_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+def get_chat_name_sdk(chat_id):
+    """Resolve a group chat display name (empty on failure)."""
+    try:
+        req = GetChatRequest.builder().chat_id(chat_id).build()
+        resp = api_client.im.v1.chat.get(req)
+        if resp.code == 0 and resp.data:
+            return resp.data.name or ""
+        log.error(f"[get_chat_name_sdk] Failed: {resp.msg}")
+    except Exception as e:
+        log.error(f"[get_chat_name_sdk] Error: {e}")
+    return ""
+
+
+def get_user_name_sdk(open_id):
+    """Resolve a user display name by open_id (empty on failure)."""
+    if not open_id:
+        return ""
+    try:
+        req = GetUserRequest.builder().user_id_type("open_id").user_id(open_id).build()
+        resp = api_client.contact.v3.user.get(req)
+        if resp.code == 0 and resp.data and resp.data.user:
+            return resp.data.user.name or ""
+        log.error(f"[get_user_name_sdk] Failed: {resp.msg}")
+    except Exception as e:
+        log.error(f"[get_user_name_sdk] Error: {e}")
+    return ""
+
+
+async def send_card_to_chat_async(chat_id, card_content):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: send_card_to_chat_sdk(chat_id, card_content))
+
+
+async def send_text_to_chat_async(chat_id, text):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: send_text_to_chat_sdk(chat_id, text))
+
+
+async def get_chat_name_async(chat_id):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_chat_name_sdk(chat_id))
+
+
+async def get_user_name_async(open_id):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_user_name_sdk(open_id))
