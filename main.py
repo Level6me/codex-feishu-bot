@@ -18,6 +18,13 @@ from logger import log
 from handlers.events import do_p2_im_message_receive_v1, do_p2_card_action_trigger
 from garbage_collection import garbage_collector
 
+
+def _ignore_reaction_event(data):
+    """表情回复事件（含机器人自身触发）无需额外处理，仅记录调试日志。"""
+    log.debug("[reaction] ignored (no handler needed)")
+    return {"code": 0, "msg": "ignored"}
+
+
 async def main():
     app_state.main_loop = asyncio.get_running_loop()
     log.info("Starting Lark WS Client...")
@@ -60,6 +67,8 @@ async def main():
     event_handler = lark.EventDispatcherHandler.builder("", "") \
         .register_p2_im_message_receive_v1(do_p2_im_message_receive_v1) \
         .register_p2_card_action_trigger(do_p2_card_action_trigger) \
+        .register_p2_im_message_reaction_created_v1(_ignore_reaction_event) \
+        .register_p2_im_message_reaction_deleted_v1(_ignore_reaction_event) \
         .build()
 
     cli = lark.ws.Client(

@@ -8,6 +8,7 @@ from lark_oapi.api.im.v1 import (
     PatchMessageRequestBody, GetMessageResourceRequest, CreateMessageReactionRequest,
     CreateMessageReactionRequestBody, Emoji, DeleteMessageReactionRequest,
     CreateMessageRequest, CreateMessageRequestBody, GetChatRequest,
+    CreateFileRequest, CreateFileRequestBody,
 )
 from lark_oapi.api.contact.v3 import GetUserRequest
 from config import APP_ID, APP_SECRET
@@ -172,6 +173,65 @@ def send_text_to_chat_sdk(chat_id, text):
         log.error(f"[send_text_to_chat_sdk] Failed: {resp.msg}")
         return False
     return True
+
+
+@with_retry()
+def upload_file_sdk(file_path, file_type=None):
+    """上传本地文件到飞书，返回 file_key（失败返回 None）。"""
+    ext_map = {
+        ".pdf": "pdf", ".doc": "doc", ".docx": "doc", ".xls": "xls",
+        ".xlsx": "xls", ".ppt": "ppt", ".pptx": "ppt", ".mp4": "mp4",
+        ".opus": "opus", ".ogg": "opus", ".mp3": "opus", ".wav": "opus",
+    }
+    ext = os.path.splitext(file_path)[1].lower()
+    ft = file_type or ext_map.get(ext, "stream")
+    try:
+        with open(file_path, "rb") as f:
+            req = CreateFileRequest.builder() \
+                .request_body(CreateFileRequestBody.builder()
+                    .file_type(ft)
+                    .file_name(os.path.basename(file_path))
+                    .file(f)
+                    .build()) \
+                .build()
+            resp = api_client.im.v1.file.create(req)
+        if resp.code == 0:
+            data = json.loads(resp.raw.content).get("data", {})
+            return data.get("file_key")
+        log.error(f"[upload_file_sdk] Failed: {resp.msg}")
+        return None
+    except Exception as e:
+        log.error(f"[upload_file_sdk] Error: {e}")
+        return None
+
+
+@with_retry()
+def send_file_to_chat_sdk(chat_id, file_key):
+    """向会话发送一个已上传的文件消息。"""
+    req = CreateMessageRequest.builder() \
+        .receive_id_type("chat_id") \
+        .request_body(CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("file")
+            .content(json.dumps({"file_key": file_key}))
+            .build()) \
+        .build()
+    resp = api_client.im.v1.message.create(req)
+    if resp.code != 0:
+        log.error(f"[send_file_to_chat_sdk] Failed: {resp.msg}")
+        return False
+    return True
+
+
+def send_local_file_to_chat(chat_id, file_path, file_type=None, caption=None):
+    """组合：上传本地文件并发送到会话；可选附带一段说明文字。"""
+    file_key = upload_file_sdk(file_path, file_type)
+    if not file_key:
+        return False
+    ok = send_file_to_chat_sdk(chat_id, file_key)
+    if ok and caption:
+        send_text_to_chat_sdk(chat_id, caption)
+    return ok
 
 
 def get_chat_name_sdk(chat_id):
