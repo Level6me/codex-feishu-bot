@@ -10,7 +10,7 @@ class StallCardsTest(unittest.TestCase):
     def test_streaming_indicator_contains_partial_text(self):
         card = CardBuilder.build_streaming_indicator("正在生成的内容", "执行命令", "你好", 3)
         self.assertEqual(card["header"]["template"], "blue")
-        self.assertIn("打字机生成中", card["header"]["title"]["content"])
+        self.assertIn("正在生成", card["header"]["title"]["content"])
         content = card["elements"][0]["content"]
         self.assertIn("正在生成的内容", content)
         self.assertIn("执行命令", content)

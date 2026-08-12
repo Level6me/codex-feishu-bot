@@ -164,7 +164,7 @@ def build_download_indicator(file_name, media_type="文件"):
 def build_streaming_indicator(partial_text, tool_action=None, user_text="", think_seconds=0):
         """流式打字机卡片：实时展示模型已输出的部分文本。"""
         title, _ = _guess_intent(user_text)
-        header_title = f"⚡ 打字机生成中 | {title}"
+        header_title = f"⚡ 正在生成 | {title}"
 
         status_bar = f"*( ⏱️ 已思考 {think_seconds}s"
         if tool_action:

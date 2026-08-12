@@ -1946,7 +1946,7 @@
   "header": {
    "template": "blue",
    "title": {
-    "content": "⚡ 打字机生成中 | ✨ AI 思考中...",
+    "content": "⚡ 正在生成 | ✨ AI 思考中...",
     "tag": "plain_text"
    }
   }

@@ -18,6 +18,7 @@ import stats
 STALL_TIMEOUT = 600          # 连续 10 分钟无任何进度判定为卡死
 QUIET_WARNING_THRESHOLD = 180  # 连续 3 分钟无输出时推送停滞预警卡片
 GLOBAL_TIMEOUT = 43200       # 12 小时全局超时保护上限
+STREAM_PATCH_INTERVAL = 1.0  # 流式卡片固定刷新间隔（秒），保证打字机与读秒平滑
 FEISHU_TIMEOUT = 30
 SAVE_TIMEOUT = 3
 
@@ -274,7 +275,6 @@ async def execute_codex(
     stream_text = ""
     last_streamed_length = 0
     started = time.time()
-    backoff_delay = 1.0
     next_patch_time = 0.0
 
     async def consume_stdout():
@@ -371,8 +371,10 @@ async def execute_codex(
                     if not clean_partial:
                         clean_partial = stream_text
                     target_len = len(clean_partial)
+                    # 打字机增量：短文本逐字显现，长文本约 50 秒内打完全文
+                    tick_chars = max(6, min(50, target_len // 50))
                     if last_streamed_length < target_len:
-                        last_streamed_length = min(target_len, last_streamed_length + 90)
+                        last_streamed_length = min(target_len, last_streamed_length + tick_chars)
                     display_partial = clean_partial[:last_streamed_length]
                     card = CardBuilder.build_streaming_indicator(display_partial, latest_action, user_text, seconds)
                 else:
@@ -385,8 +387,7 @@ async def execute_codex(
                     await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, card)
                 except Exception as e:
                     log.warning(f"Indicator patch failed: {e}")
-                next_patch_time = now + backoff_delay
-                backoff_delay = min(backoff_delay * 2, 10.0)
+                next_patch_time = now + STREAM_PATCH_INTERVAL
 
         try:
             await asyncio.wait_for(process.wait(), timeout=5.0)
