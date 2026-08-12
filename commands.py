@@ -188,6 +188,7 @@ class PendingCommand(str, Enum):
     NOTE_ADD = "note_add"
     WORKSPACE_ROOT = "workspace_root"
     CRON_ADD = "cron_add"
+    PLUGIN_INSTALL = "plugin_install"
 
 
 # 已知斜杠命令白名单：仅当用户输入命中时才清除 pending 状态，
@@ -332,6 +333,24 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
 
         elif pending_command == PendingCommand.CREATE_PROJECT:
             return await _handle_create_project(user_text, message_id, chat_id, session_data)
+
+        elif pending_command == PendingCommand.PLUGIN_INSTALL:
+            repo_url = user_text.strip()
+            session_data.pop("pending_command", None)
+            await save_session_async(chat_id, session_data)
+            if not repo_url or not (repo_url.startswith("http://") or repo_url.startswith("https://") or repo_url.startswith("git@")):
+                reply_text = "❌ 格式无效，请发送有效的 GitHub 仓库地址（例如：`https://github.com/xxx/plugin-repo`）。"
+            else:
+                try:
+                    from plugin_store import install_plugin_from_github
+                    from plugin_manager import plugin_manager
+                    ok, msg = await asyncio.get_running_loop().run_in_executor(None, lambda: install_plugin_from_github(repo_url))
+                    plugin_manager.reload_plugins()
+                    reply_text = ("✅ " if ok else "❌ ") + msg
+                except Exception as e:
+                    reply_text = f"❌ 插件安装异常: {e}"
+            await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+            return True, user_text
 
     if user_text == "/stop":
         cleared = False

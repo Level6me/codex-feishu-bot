@@ -800,6 +800,107 @@ def _handle_cron_card_action(action_value, chat_id, card_message_id):
     return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "未知操作"}})
 
 
+def _handle_plugin_panel_action(action_value, chat_id, card_message_id):
+    """Handle plugin-panel / plugin-store card actions (built-in plugin management)."""
+    from plugin_manager import plugin_manager
+
+    action = action_value.get("action")
+
+    def _refresh_panel(tab="installed"):
+        return patch_interactive_card_sdk(
+            card_message_id,
+            CardBuilder.build_plugin_panel_card(plugin_manager.get_plugin_list(), active_tab=tab),
+        )
+
+    if action == "switch_plugin_tab":
+        tab = "sources" if action_value.get("tab") == "sources" else "installed"
+        if main_loop and main_loop.is_running():
+            async def _do_switch_tab():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_panel(tab))
+            asyncio.run_coroutine_threadsafe(_do_switch_tab(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "已切换至插件源" if tab == "sources" else "已切换至已安装插件"}})
+
+    if action == "reload_plugins":
+        if main_loop and main_loop.is_running():
+            async def _do_reload():
+                plugin_manager.reload_plugins()
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_panel("installed"))
+            asyncio.run_coroutine_threadsafe(_do_reload(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "插件库已热重载"}})
+
+    if action == "refresh_store_plugins":
+        if main_loop and main_loop.is_running():
+            async def _do_refresh_store():
+                try:
+                    from plugin_store import fetch_remote_store_plugins
+                    fetch_remote_store_plugins(force_refresh=True)
+                except Exception as e:
+                    log.warning(f"refresh_store_plugins failed: {e}")
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_panel("sources"))
+            asyncio.run_coroutine_threadsafe(_do_refresh_store(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "已刷新插件商店"}})
+
+    if action == "update_plugin":
+        plugin_id = action_value.get("plugin_id", "")
+        if main_loop and main_loop.is_running():
+            async def _do_update():
+                from plugin_store import update_plugin
+                ok, msg = await asyncio.get_running_loop().run_in_executor(None, lambda: update_plugin(plugin_id))
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, ("✅ " if ok else "❌ ") + msg))
+                plugin_manager.reload_plugins()
+            asyncio.run_coroutine_threadsafe(_do_update(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "正在检查插件更新..."}})
+
+    if action == "uninstall_plugin":
+        plugin_id = action_value.get("plugin_id", "")
+        if main_loop and main_loop.is_running():
+            async def _do_uninstall():
+                from plugin_store import uninstall_plugin
+                ok, msg = await asyncio.get_running_loop().run_in_executor(None, lambda: uninstall_plugin(plugin_id))
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, ("✅ " if ok else "❌ ") + msg))
+                plugin_manager.reload_plugins()
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_panel("installed"))
+            asyncio.run_coroutine_threadsafe(_do_uninstall(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "正在卸载插件..."}})
+
+    if action == "install_github_repo":
+        repo_url = action_value.get("repo_url", "")
+        custom_id = action_value.get("plugin_id", "")
+        if main_loop and main_loop.is_running():
+            async def _do_install():
+                from plugin_store import install_plugin_from_github
+                ok, msg = await asyncio.get_running_loop().run_in_executor(None, lambda: install_plugin_from_github(repo_url, custom_id))
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, ("✅ " if ok else "❌ ") + msg))
+                plugin_manager.reload_plugins()
+                await asyncio.get_running_loop().run_in_executor(None, lambda: _refresh_panel("sources"))
+            asyncio.run_coroutine_threadsafe(_do_install(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "正在从 GitHub 安装插件..."}})
+
+    if action == "prompt_install_github":
+        if main_loop and main_loop.is_running():
+            async def _do_prompt_install():
+                session_data = await get_session_async(chat_id)
+                session_data["pending_command"] = "plugin_install"
+                await save_session_async(chat_id, session_data)
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: send_reply_sdk(
+                        card_message_id,
+                        "📥 **请输入要安装插件的 GitHub 仓库地址**\n\n*(例如：`https://github.com/xxx/plugin-repo`)*",
+                    ),
+                )
+            asyncio.run_coroutine_threadsafe(_do_prompt_install(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "请发送 GitHub 仓库地址"}})
+
+    if action == "prompt_add_source":
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "当前版本使用默认官方插件源，暂不支持自定义源"}})
+
+    if action == "already_active":
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "该插件已激活"}})
+
+    return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "未知插件操作"}})
+
+
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     if not data or not data.event or not data.event.message:
         log.warning("Received malformed message event")
@@ -910,16 +1011,6 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
     }
     if action_value.get("action") in _CRON_ACTIONS:
         return _handle_cron_card_action(action_value, chat_id, card_message_id)
-
-    # ---- Plugin domain (dispatch to loaded plugins) ----
-    from plugin_manager import plugin_manager
-    plugin_action = action_value.get("action", "")
-    if plugin_action and plugin_manager.plugins:
-        if main_loop and main_loop.is_running():
-            async def _do_plugin_action():
-                await plugin_manager.dispatch_card_action(plugin_action, action_value, chat_id, card_message_id)
-            asyncio.run_coroutine_threadsafe(_do_plugin_action(), main_loop)
-        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "已处理"}})
 
     if action_value.get("action") == "switch_model":
         new_model = action_value.get("model")
@@ -1200,6 +1291,25 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
                 await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(card_message_id, prompt_msg))
             asyncio.run_coroutine_threadsafe(do_add_memory_prompt(), main_loop)
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "请回复要记住的偏好！"}})
+
+    # ---- Plugin panel / store domain (built-in plugin-management buttons) ----
+    _PLUGIN_PANEL_ACTIONS = {
+        "switch_plugin_tab", "reload_plugins", "refresh_store_plugins",
+        "update_plugin", "uninstall_plugin", "install_github_repo",
+        "prompt_install_github", "prompt_add_source", "already_active",
+    }
+    if action_value.get("action") in _PLUGIN_PANEL_ACTIONS:
+        return _handle_plugin_panel_action(action_value, chat_id, card_message_id)
+
+    # ---- Plugin domain (dispatch to loaded plugins, AFTER built-in actions) ----
+    from plugin_manager import plugin_manager
+    plugin_action = action_value.get("action", "")
+    if plugin_action and plugin_manager.plugins:
+        if main_loop and main_loop.is_running():
+            async def _do_plugin_action():
+                await plugin_manager.dispatch_card_action(plugin_action, action_value, chat_id, card_message_id)
+            asyncio.run_coroutine_threadsafe(_do_plugin_action(), main_loop)
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "已处理"}})
     
     return P2CardActionTriggerResponse()
 
