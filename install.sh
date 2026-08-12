@@ -12,6 +12,34 @@ REPO_URL="https://github.com/Level6me/codex-feishu-bot.git"
 PROJECT_DIR="codex-feishu-bot"
 PM2_NAME="codex-feishu-bot"
 
+# ---------- 0. 子命令（update / uninstall） ----------
+do_update() {
+    echo "🔄 开始升级 ${PM2_NAME} ..."
+    git pull origin main || true
+    source venv/bin/activate
+    pip install -r requirements.txt
+    pm2 restart "$PM2_NAME" || pm2 start venv/bin/python3 --name "$PM2_NAME" -- main.py
+    echo "✅ 升级完成。"
+}
+
+do_uninstall() {
+    echo "🗑️ 开始卸载 ${PM2_NAME} ..."
+    pm2 stop "$PM2_NAME" 2>/dev/null || true
+    pm2 delete "$PM2_NAME" 2>/dev/null || true
+    pm2 save || true
+    read -r -p "是否删除 venv 与 .env？（源代码目录保留）[y/N]: " del_data
+    if [[ "$del_data" =~ ^[Yy]$ ]]; then
+        rm -rf venv .env 2>/dev/null || true
+        echo "✅ 已删除 venv 与 .env。"
+    fi
+    echo "✅ 卸载完成（源代码目录保留，如需彻底删除请手动移除 $(pwd)）。"
+}
+
+case "${1:-}" in
+    update) do_update; exit 0 ;;
+    uninstall) do_uninstall; exit 0 ;;
+esac
+
 # ---------- 0. 平台检测 ----------
 detect_os() {
     case "$(uname -s)" in

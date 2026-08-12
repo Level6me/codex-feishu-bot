@@ -140,6 +140,8 @@
 | 文档同步 | ✅ `.env.example`、README（含 Docker 部署小节）、CHANGELOG 均已同步 |
 | 停滞检测 | ✅ 600 秒 + stderr + custom_tool_call，已对齐无需再动 |
 | 部署脚本多平台化 | ✅ `install.sh` 自动检测 macOS / Debian / Fedora / RHEL / Arch / Alpine；用户级 npm 安装 pm2/Codex（免 sudo）；开机自启按平台适配 |
+| 部署脚本子命令 | ✅ `install.sh update`（git pull + 依赖 + pm2 重启）/ `install.sh uninstall`（停删 pm2 + 可选清理 venv/.env） |
+| 飞书后台配置指南 | ✅ README 新增「飞书后台配置」章节：7 项权限清单、2 个事件订阅、版本发布/可用范围注意事项 |
 
 > 说明：本机无 Docker 环境，未做镜像实际构建；compose 结构已静态核对，构建命令见 README。
 
@@ -150,3 +152,5 @@
 ### 2026-08-12
 - 阶段 1 完成：数据库 6 张新表 + 配置项扩展。
 - 停滞检测修复：`STALL_TIMEOUT` 300 → 600，stderr 与 `custom_tool_call` 纳入进度信号，系统指令新增 [Agent 执行规范]。
+- 源项目功能同步盘点：核心能力 100% 同步并已超越（定时任务/插件/测试套件为本项目独有）；补齐差异——
+  `install.sh` 增加 update/uninstall 子命令；README 增加飞书后台配置章节（权限/事件/发布）。
