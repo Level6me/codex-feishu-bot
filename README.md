@@ -258,6 +258,7 @@ venv/bin/python3 -m unittest discover -s tests -v
 
 - 冻结基线标签：`v1.0-freeze-base`
 - 回归验收清单：见 [REGRESSION_CHECKLIST.md](REGRESSION_CHECKLIST.md)
+- 飞书端交互点验手册：见 [FLIGHT_CHECK.md](docs/FLIGHT_CHECK.md)
 - 迁移与演进记录：见 [MIGRATION.md](MIGRATION.md) / [CHANGELOG.md](CHANGELOG.md)
 
 冻结期纪律：只修 bug、不加新功能；每次改动小步验证，全量回归通过后才允许上线。
