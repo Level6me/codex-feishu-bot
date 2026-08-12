@@ -159,3 +159,111 @@ def build_download_indicator(file_name, media_type="文件"):
                 _create_footer()
             ]
         }
+
+
+def build_streaming_indicator(partial_text, tool_action=None, user_text="", think_seconds=0):
+        """流式打字机卡片：实时展示模型已输出的部分文本。"""
+        title, _ = _guess_intent(user_text)
+        header_title = f"⚡ 打字机生成中 | {title}"
+
+        status_bar = f"*( ⏱️ 已思考 {think_seconds}s"
+        if tool_action:
+            status_bar += f" | 🛠️ {tool_action}"
+        status_bar += " )*\n\n---\n\n"
+
+        # 超长文本截断到安全载荷，保留末尾最新内容
+        max_streaming_chars = 3500
+        display_text = partial_text or ""
+        if len(display_text) > max_streaming_chars:
+            display_text = "... (前文已自动隐藏) ...\n\n" + display_text[-max_streaming_chars:]
+
+        full_content = status_bar + display_text + " ▌"
+
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "blue",
+                "title": {"content": header_title, "tag": "plain_text"}
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": full_content
+                },
+                _create_footer()
+            ]
+        }
+
+
+def build_stall_warning_card(user_prompt, think_seconds, stall_seconds):
+        """停滞预警卡片：连续多分钟无输出时推送，带继续等待 / 叫停按钮。"""
+        mins = stall_seconds // 60
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "orange",
+                "title": {"content": "⏱️ AI 处于深度推理等待中", "tag": "plain_text"}
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": f"模型已思考 **{think_seconds} 秒**（静默生成等待已达 **{mins} 分钟**）。\n\n"
+                               "*模型 API 正在云端进行思维链推理或长数据检索，后台守护机制正常工作中，已为您自动延长等待时间。*"
+                },
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "🟢 继续静默等待"},
+                            "type": "primary",
+                            "value": {"action": "user_choice", "choice": "继续等待", "label": "继续静默等待"}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "🛑 叫停任务"},
+                            "type": "danger",
+                            "value": {"action": "user_choice", "choice": "/stop", "label": "叫停任务"}
+                        }
+                    ]
+                },
+                _create_footer()
+            ]
+        }
+
+
+def build_stall_error_card(user_prompt, think_seconds, stall_seconds):
+        """卡死错误卡片：判定任务卡死并终止后推送，带重发 / 切换模型按钮。"""
+        clean_prompt = (user_prompt or "重试上条请求")[:80]
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "red",
+                "title": {"content": "⚠️ 任务无响应已终止", "tag": "plain_text"}
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": f"任务已连续 **{stall_seconds // 60} 分钟** 无任何 Token、CPU 计算或日志写入，"
+                               "已判定为卡死并自动终止。\n\n**建议操作选项**："
+                },
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "🔄 重新发送此请求"},
+                            "type": "primary",
+                            "value": {"action": "user_choice", "choice": clean_prompt, "label": "重新发送请求"}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⚙️ 切换更快的模型"},
+                            "type": "default",
+                            "value": {"action": "user_choice", "choice": "/model", "label": "打开模型切换面板"}
+                        }
+                    ]
+                },
+                _create_footer()
+            ]
+        }

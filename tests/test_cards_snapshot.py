@@ -1,4 +1,4 @@
-"""卡片构建快照测试：38 个 CardBuilder 方法输出与基线完全一致。"""
+"""卡片构建快照测试：41 个 CardBuilder 方法输出与基线完全一致。"""
 import json
 import os
 import unittest
@@ -10,7 +10,7 @@ BASELINE = os.path.join(os.path.dirname(__file__), "baseline", "cards_baseline.j
 
 
 def collect():
-    """调用全部 38 个 CardBuilder 方法（代表性参数）。"""
+    """调用全部 41 个 CardBuilder 方法（代表性参数）。"""
     out = {}
     out["_create_footer"] = CardBuilder._create_footer()
     out["build_model_panel"] = CardBuilder.build_model_panel(["gpt-5.1-codex", "deepseek-v4-flash"], "deepseek-v4-flash")
@@ -20,6 +20,9 @@ def collect():
     out["build_typing_indicator"] = CardBuilder.build_typing_indicator("test.txt", True, "你好", 3)
     out["build_tool_indicator"] = CardBuilder.build_tool_indicator("执行命令", "你好", "test.txt", True, 3)
     out["build_download_indicator"] = CardBuilder.build_download_indicator("test.pdf", "文件")
+    out["build_streaming_indicator"] = CardBuilder.build_streaming_indicator("正在生成的部分文本", "执行命令", "你好", 3)
+    out["build_stall_warning_card"] = CardBuilder.build_stall_warning_card("测试提示", 200, 190)
+    out["build_stall_error_card"] = CardBuilder.build_stall_error_card("测试提示", 650, 620)
     out["build_ai_response"] = CardBuilder.build_ai_response(
         "回复内容", choice_card_data={"question": "请选择：", "options": ["选项1", "选项2"]},
         current_model="deepseek-v4-flash", current_project="默认", is_error=False, is_streaming=False,

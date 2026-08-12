@@ -15,7 +15,9 @@ from multimodal import extract_and_upload_resources
 from logger import log
 import stats
 
-STALL_TIMEOUT = 600
+STALL_TIMEOUT = 600          # 连续 10 分钟无任何进度判定为卡死
+QUIET_WARNING_THRESHOLD = 180  # 连续 3 分钟无输出时推送停滞预警卡片
+GLOBAL_TIMEOUT = 43200       # 12 小时全局超时保护上限
 FEISHU_TIMEOUT = 30
 SAVE_TIMEOUT = 3
 
@@ -247,12 +249,14 @@ async def execute_codex(
     thread_broken = False
     last_progress_time = time.time()
     last_stdout_size = 0
+    stream_text = ""
+    last_streamed_length = 0
     started = time.time()
     backoff_delay = 1.0
     next_patch_time = 0.0
 
     async def consume_stdout():
-        nonlocal latest_action, thread_id, last_progress_time, last_stdout_size, thread_broken
+        nonlocal latest_action, thread_id, last_progress_time, last_stdout_size, thread_broken, stream_text
         while raw := await process.stdout.readline():
             last_stdout_size += len(raw)
             last_progress_time = time.time()
@@ -293,6 +297,7 @@ async def execute_codex(
             text = _agent_text(event)
             if text:
                 replies.append(text)
+                stream_text += text + "\n"
             action = _event_action(event)
             if action and action != latest_action:
                 latest_action = action
@@ -313,8 +318,9 @@ async def execute_codex(
             await asyncio.sleep(0.75)
             now = time.time()
             seconds = int(now - started)
+            stall_seconds = int(now - last_progress_time)
 
-            if now - last_progress_time > STALL_TIMEOUT:
+            if stall_seconds >= STALL_TIMEOUT:
                 stalled = True
                 try:
                     os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -322,7 +328,7 @@ async def execute_codex(
                     pass
                 break
 
-            if seconds > 1800:
+            if seconds > GLOBAL_TIMEOUT:
                 timed_out = True
                 try:
                     os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -331,11 +337,28 @@ async def execute_codex(
                 break
 
             if not silent and bot_reply_msg_id and now >= next_patch_time:
-                card = (
-                    CardBuilder.build_tool_indicator(latest_action, user_text, downloaded_file_name, download_success, seconds)
-                    if latest_action
-                    else CardBuilder.build_typing_indicator(downloaded_file_name, download_success, user_text, seconds)
-                )
+                if stall_seconds >= QUIET_WARNING_THRESHOLD:
+                    # 连续静默超阈值：推送带"继续等待 / 叫停任务"按钮的预警卡片
+                    card = CardBuilder.build_stall_warning_card(user_text, seconds, stall_seconds)
+                elif stream_text.strip():
+                    # 已有部分输出：流式打字机展示最新文本
+                    clean_partial = re.sub(
+                        r'\[CHOICE_CARD\]\s*Q:.*?(?:\[/CHOICE_CARD\]|\Z)', '',
+                        stream_text, flags=re.DOTALL | re.IGNORECASE,
+                    ).strip()
+                    if not clean_partial:
+                        clean_partial = stream_text
+                    target_len = len(clean_partial)
+                    if last_streamed_length < target_len:
+                        last_streamed_length = min(target_len, last_streamed_length + 90)
+                    display_partial = clean_partial[:last_streamed_length]
+                    card = CardBuilder.build_streaming_indicator(display_partial, latest_action, user_text, seconds)
+                else:
+                    card = (
+                        CardBuilder.build_tool_indicator(latest_action, user_text, downloaded_file_name, download_success, seconds)
+                        if latest_action
+                        else CardBuilder.build_typing_indicator(downloaded_file_name, download_success, user_text, seconds)
+                    )
                 try:
                     await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, card)
                 except Exception as e:
@@ -382,9 +405,17 @@ async def execute_codex(
     if stalled:
         failed = True
         reply = f"⚠️ 任务已 {STALL_TIMEOUT} 秒无任何进展（无 stdout 输出、无工具动作变化），疑似内部死锁，已强制终止。请拆分任务或 /stop 后重试。"
+        if not silent and bot_reply_msg_id:
+            try:
+                error_card = CardBuilder.build_stall_error_card(
+                    user_text, int(time.time() - started), int(time.time() - last_progress_time)
+                )
+                await _feishu_call(loop, patch_interactive_card_sdk, bot_reply_msg_id, error_card)
+            except Exception as e:
+                log.warning(f"Stall error card patch failed: {e}")
     elif timed_out:
         failed = True
-        reply = "⏰ 任务执行超过 30 分钟已被强制终止。请拆分任务或使用 /stop 后重试。"
+        reply = "⏰ 任务执行超过 12 小时已被强制终止（系统保护上限）。请拆分任务或使用 /stop 后重试。"
     elif failed:
         all_errors = "".join(errors).strip()
         if stdout_errors:

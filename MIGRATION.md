@@ -138,7 +138,10 @@
 | `.dockerignore` | ✅ 新增，排除 venv/.git/.env/logs/db/缓存等 |
 | DB 路径可配置 | ✅ `DB_FILE` 环境变量（默认 `codex_bot.db`，本机行为不变） |
 | 文档同步 | ✅ `.env.example`、README（含 Docker 部署小节）、CHANGELOG 均已同步 |
-| 停滞检测 | ✅ 600 秒 + stderr + custom_tool_call，已对齐无需再动 |
+| 停滞检测 | ✅ STALL_TIMEOUT 600s + stderr + custom_tool_call + 预警/错误交互卡片 + 流式打字机 |
+| 停滞预警/错误卡片 | ✅ `build_stall_warning_card`（3 分钟静默预警，继续等待/叫停按钮）、`build_stall_error_card`（卡死终止重试/切模型按钮） |
+| 流式打字机 | ✅ `build_streaming_indicator` 实时展示已输出文本（截断 3500 字符保载荷安全） |
+| 全局超时 | ✅ 30 分钟 → 12 小时（43200s，与源项目一致，避免误杀长任务） |
 | 部署脚本多平台化 | ✅ `install.sh` 自动检测 macOS / Debian / Fedora / RHEL / Arch / Alpine；用户级 npm 安装 pm2/Codex（免 sudo）；开机自启按平台适配 |
 | 部署脚本子命令 | ✅ `install.sh update`（git pull + 依赖 + pm2 重启）/ `install.sh uninstall`（停删 pm2 + 可选清理 venv/.env） |
 | 飞书后台配置指南 | ✅ README 新增「飞书后台配置」章节：7 项权限清单、2 个事件订阅、版本发布/可用范围注意事项 |

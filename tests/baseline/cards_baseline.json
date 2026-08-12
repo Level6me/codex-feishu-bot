@@ -710,6 +710,59 @@
      {
       "elements": [
        {
+        "content": "📁 **antigravity_XN3xts**\n*`/tmp/antigravity_XN3xts`*",
+        "tag": "markdown"
+       }
+      ],
+      "tag": "column",
+      "weight": 1,
+      "width": "weighted"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "选择",
+         "tag": "plain_text"
+        },
+        "type": "primary",
+        "value": {
+         "action": "select_project",
+         "path": "/tmp/antigravity_XN3xts"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     },
+     {
+      "elements": [
+       {
+        "tag": "button",
+        "text": {
+         "content": "删除",
+         "tag": "plain_text"
+        },
+        "type": "danger",
+        "value": {
+         "action": "remove_project_from_list",
+         "path": "/tmp/antigravity_XN3xts"
+        }
+       }
+      ],
+      "tag": "column",
+      "width": "auto"
+     }
+    ],
+    "flex_mode": "none",
+    "tag": "column_set"
+   },
+   {
+    "columns": [
+     {
+      "elements": [
+       {
         "content": "📁 **iscsi-deploy**\n*`/tmp/iscsi-deploy`*",
         "tag": "markdown"
        }
@@ -854,59 +907,6 @@
         "value": {
          "action": "remove_project_from_list",
          "path": "/tmp/powerlog"
-        }
-       }
-      ],
-      "tag": "column",
-      "width": "auto"
-     }
-    ],
-    "flex_mode": "none",
-    "tag": "column_set"
-   },
-   {
-    "columns": [
-     {
-      "elements": [
-       {
-        "content": "📁 **RustDesk-0**\n*`/tmp/RustDesk-0`*",
-        "tag": "markdown"
-       }
-      ],
-      "tag": "column",
-      "weight": 1,
-      "width": "weighted"
-     },
-     {
-      "elements": [
-       {
-        "tag": "button",
-        "text": {
-         "content": "选择",
-         "tag": "plain_text"
-        },
-        "type": "primary",
-        "value": {
-         "action": "select_project",
-         "path": "/tmp/RustDesk-0"
-        }
-       }
-      ],
-      "tag": "column",
-      "width": "auto"
-     },
-     {
-      "elements": [
-       {
-        "tag": "button",
-        "text": {
-         "content": "删除",
-         "tag": "plain_text"
-        },
-        "type": "danger",
-        "value": {
-         "action": "remove_project_from_list",
-         "path": "/tmp/RustDesk-0"
         }
        }
       ],
@@ -1734,6 +1734,122 @@
    }
   }
  },
+ "build_stall_error_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "任务已连续 **10 分钟** 无任何 Token、CPU 计算或日志写入，已判定为卡死并自动终止。\n\n**建议操作选项**：",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🔄 重新发送此请求",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "测试提示",
+       "label": "重新发送请求"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "⚙️ 切换更快的模型",
+       "tag": "plain_text"
+      },
+      "type": "default",
+      "value": {
+       "action": "user_choice",
+       "choice": "/model",
+       "label": "打开模型切换面板"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "red",
+   "title": {
+    "content": "⚠️ 任务无响应已终止",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_stall_warning_card": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "模型已思考 **200 秒**（静默生成等待已达 **3 分钟**）。\n\n*模型 API 正在云端进行思维链推理或长数据检索，后台守护机制正常工作中，已为您自动延长等待时间。*",
+    "tag": "markdown"
+   },
+   {
+    "actions": [
+     {
+      "tag": "button",
+      "text": {
+       "content": "🟢 继续静默等待",
+       "tag": "plain_text"
+      },
+      "type": "primary",
+      "value": {
+       "action": "user_choice",
+       "choice": "继续等待",
+       "label": "继续静默等待"
+      }
+     },
+     {
+      "tag": "button",
+      "text": {
+       "content": "🛑 叫停任务",
+       "tag": "plain_text"
+      },
+      "type": "danger",
+      "value": {
+       "action": "user_choice",
+       "choice": "/stop",
+       "label": "叫停任务"
+      }
+     }
+    ],
+    "tag": "action"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "orange",
+   "title": {
+    "content": "⏱️ AI 处于深度推理等待中",
+    "tag": "plain_text"
+   }
+  }
+ },
  "build_status_card": {
   "config": {
    "wide_screen_mode": true
@@ -1804,6 +1920,33 @@
    "template": "blue",
    "title": {
     "content": "📊 服务器运行状态",
+    "tag": "plain_text"
+   }
+  }
+ },
+ "build_streaming_indicator": {
+  "config": {
+   "wide_screen_mode": true
+  },
+  "elements": [
+   {
+    "content": "*( ⏱️ 已思考 3s | 🛠️ 执行命令 )*\n\n---\n\n正在生成的部分文本 ▌",
+    "tag": "markdown"
+   },
+   {
+    "elements": [
+     {
+      "content": "⚡ Powered by codex | 🕒 TIME",
+      "tag": "plain_text"
+     }
+    ],
+    "tag": "note"
+   }
+  ],
+  "header": {
+   "template": "blue",
+   "title": {
+    "content": "⚡ 打字机生成中 | ✨ AI 思考中...",
     "tag": "plain_text"
    }
   }

@@ -46,6 +46,18 @@ class CardBuilder:
         return common.build_download_indicator(*args, **kwargs)
 
     @staticmethod
+    def build_streaming_indicator(*args, **kwargs):
+        return common.build_streaming_indicator(*args, **kwargs)
+
+    @staticmethod
+    def build_stall_warning_card(*args, **kwargs):
+        return common.build_stall_warning_card(*args, **kwargs)
+
+    @staticmethod
+    def build_stall_error_card(*args, **kwargs):
+        return common.build_stall_error_card(*args, **kwargs)
+
+    @staticmethod
     def build_ai_response(*args, **kwargs):
         return chat.build_ai_response(*args, **kwargs)
 
