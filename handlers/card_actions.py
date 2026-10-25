@@ -191,6 +191,9 @@ def _handle_cron_card_action(action_value, chat_id, card_message_id):
     if action == "toggle_cron_active":
         task_id = action_value.get("task_id")
         is_active = bool(action_value.get("is_active", True))
+        task = get_cron_task(task_id) if task_id else None
+        if not task or task.get("chat_id") != chat_id:
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无权操作该任务"}})
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_toggle_cron():
                 await asyncio.get_running_loop().run_in_executor(None, lambda: update_cron_task_status(task_id, is_active))
@@ -203,6 +206,9 @@ def _handle_cron_card_action(action_value, chat_id, card_message_id):
 
     if action == "delete_cron_task":
         task_id = action_value.get("task_id")
+        task = get_cron_task(task_id) if task_id else None
+        if not task or task.get("chat_id") != chat_id:
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无权操作该任务"}})
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_delete_cron():
                 await asyncio.get_running_loop().run_in_executor(None, lambda: delete_cron_task(task_id))
@@ -215,6 +221,9 @@ def _handle_cron_card_action(action_value, chat_id, card_message_id):
 
     if action == "run_cron_now":
         task_id = action_value.get("task_id")
+        task = get_cron_task(task_id) if task_id else None
+        if not task or task.get("chat_id") != chat_id:
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无权操作该任务"}})
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_run_now():
                 task = await asyncio.get_running_loop().run_in_executor(None, lambda: get_cron_task(task_id))

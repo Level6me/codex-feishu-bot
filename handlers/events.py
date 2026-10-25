@@ -265,7 +265,10 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
             
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "项目已成功从列表中移出！"}})
     elif action_value.get("action") == "view_note_detail":
-        idx = int(action_value.get("index"))
+        try:
+            idx = int(action_value.get("index"))
+        except (TypeError, ValueError):
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无效的笔记编号"}})
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_view_note():
                 session_data = await get_session_async(chat_id)
@@ -277,7 +280,10 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
         return P2CardActionTriggerResponse({"toast": {"type": "info", "content": "详情已发送到当前会话！"}})
         
     elif action_value.get("action") == "delete_note":
-        idx = int(action_value.get("index"))
+        try:
+            idx = int(action_value.get("index"))
+        except (TypeError, ValueError):
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无效的笔记编号"}})
         
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_delete_note():
@@ -332,7 +338,10 @@ def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerR
         return P2CardActionTriggerResponse({"toast": {"type": "success", "content": "额度已刷新！"}})
 
     elif action_value.get("action") == "forget_single_memory":
-        idx = int(action_value.get("index"))
+        try:
+            idx = int(action_value.get("index"))
+        except (TypeError, ValueError):
+            return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "无效的记录编号"}})
         
         if app_state.main_loop and app_state.main_loop.is_running():
             async def do_forget():

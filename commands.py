@@ -50,7 +50,7 @@ async def _handle_create_project(user_text, message_id, chat_id, session_data, r
     
     if is_git_url:
         repo_name = input_text.split("/")[-1].replace(".git", "")
-        if not repo_name:
+        if not repo_name or repo_name in (".", ".."):
             repo_name = "repo"
         clean_dir_name = repo_name
     else:
@@ -309,7 +309,11 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
                 now_ts = int(_time.time())
                 next_run = compute_next_run(expr, task_type, now_ts)
 
-                task_id = f"task_usr_{now_ts}"
+                now_ts = int(_time.time())
+                next_run = compute_next_run(expr, task_type, now_ts)
+
+                # 毫秒级时间戳 + 短随机后缀，避免同一秒内不同会话创建任务时主键冲突被静默覆盖
+                task_id = f"task_usr_{now_ts}_{uuid.uuid4().hex[:6]}"
                 task_data = {
                     'id': task_id,
                     'chat_id': chat_id,
