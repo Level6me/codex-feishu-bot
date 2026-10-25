@@ -15,6 +15,10 @@ from multimodal import extract_and_upload_resources
 from logger import log
 import stats
 
+# 每个 chat 一把启动锁：防止并发请求在 check-then-act 间隙同时通过
+# running_processes 检查，导致同一会话启动两个 Codex 进程
+_chat_spawn_locks = {}
+
 STALL_TIMEOUT = 600          # 连续 10 分钟无任何进度判定为卡死
 QUIET_WARNING_THRESHOLD = 180  # 连续 3 分钟无输出时推送停滞预警卡片
 GLOBAL_TIMEOUT = 43200       # 12 小时全局超时保护上限
@@ -215,7 +219,8 @@ async def execute_codex(
     # 防止同一会话并发启动多个 Codex 进程：直接覆盖 running_processes[chat_id]
     # 会丢失进程追踪，且两个进程 resume 同一线程会造成线程错乱、卡片卡死。
     existing = running_processes.get(chat_id)
-    if existing is not None and getattr(existing, "returncode", None) is None:
+    spawn_lock = _chat_spawn_locks.setdefault(chat_id, asyncio.Lock())
+    if (existing is not None and getattr(existing, "returncode", None) is None) or spawn_lock.locked():
         msg = (
             "⚠️ 当前会话已有任务正在执行，已拒绝并发启动第二个任务"
             f"（现有进程 pid={getattr(existing, 'pid', '?')}）。"
@@ -234,11 +239,13 @@ async def execute_codex(
         return True
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            preexec_fn=os.setsid,
-        )
+        async with spawn_lock:
+            process = await asyncio.create_subprocess_exec(
+                *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                preexec_fn=os.setsid,
+            )
+            running_processes[chat_id] = process
     except FileNotFoundError:
         if silent:
             return True, f"❌ 未找到 Codex CLI（`{CODEX_BIN}`）。"
@@ -254,8 +261,6 @@ async def execute_codex(
         except Exception as e:
             log.error(f"Failed to send error card: {e}")
         return True
-
-    running_processes[chat_id] = process
 
     if not silent:
         typing_card = CardBuilder.build_typing_indicator(downloaded_file_name, download_success, user_text)

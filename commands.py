@@ -299,6 +299,8 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
                     "`任务名称 | 触发规则(如 0 9 * * * 或 600s) | 执行 Prompt`\n\n"
                     "例如：`每日总结 | 0 9 * * * | 检查当前工作区的 Git 提交并生成日报`"
                 )
+                await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
+                return True, user_text
             else:
                 name, expr, prompt = parts[0], parts[1], parts[2]
                 task_type = 'delay' if _re.match(r'^\d+\s*[s|m|h|d]?$', expr.lower()) else 'cron'
@@ -586,6 +588,7 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
         from utils.auth import (
             SCOPE_TIERS,
             get_admin_chat_id,
+            is_admin,
             set_session_role,
             start_display_name_refresh,
         )
@@ -605,6 +608,15 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
 
         parts = args.split()
         op = parts[0].lower()
+
+        # 管理操作仅限管理员：防止普通授权用户自助提权（grant/promote/reset-admin 等）
+        admin_ops = ("grant", "revoke", "ban", "unban", "promote", "demote", "reset-admin")
+        if op in admin_ops and not is_admin(chat_id):
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: send_reply_sdk(message_id, "🚫 仅管理员可执行用户管理操作。"),
+            )
+            return True, user_text
 
         if op == "grant" and len(parts) >= 2:
             target = parts[1]
