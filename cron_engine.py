@@ -14,6 +14,7 @@ from database import (
     save_cron_task,
     update_cron_task_run,
     update_cron_task_status,
+    claim_cron_task,
     record_cron_log,
     get_session_async
 )
@@ -95,6 +96,16 @@ class CronEngine:
                         continue
 
                     if now >= next_run:
+                        # 原子抢占：DB 级 CAS 防止并发调度器重复触发同一任务
+                        tentative_next = compute_next_run(task['cron_expr'], task.get('task_type', 'cron'), now)
+                        if task.get('task_type') == 'delay':
+                            tentative_next = 0
+                        claimed = await asyncio.get_running_loop().run_in_executor(
+                            None, lambda: claim_cron_task(task_id, now, tentative_next)
+                        )
+                        if not claimed:
+                            continue
+
                         self._running_tasks.add(task_id)
                         asyncio.create_task(self._run_task_wrapper(task))
 
@@ -160,33 +171,35 @@ class CronEngine:
             is_error = True
             result_text = f"定时任务执行过程中遇到异常: {str(e)}"
             log.error(f"[CronEngine] Task {task_id} failed: {e}")
+        finally:
+            # 状态更新与运行槽位释放必须兜底执行，避免异常时任务永久卡在 _running_tasks
+            try:
+                duration_ms = int((time.time() - start_time) * 1000)
+                now_ts = int(time.time())
+                next_run = compute_next_run(task['cron_expr'], task.get('task_type', 'cron'), now_ts)
 
-        duration_ms = int((time.time() - start_time) * 1000)
+                # One-shot delay task deactivates after single execution
+                if task.get('task_type') == 'delay':
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: update_cron_task_status(task_id, False)
+                    )
 
-        # 3. Record Execution Log & Update Next Run Time
-        now_ts = int(time.time())
-        next_run = compute_next_run(task['cron_expr'], task.get('task_type', 'cron'), now_ts)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: update_cron_task_run(task_id, now_ts, next_run)
+                )
+                await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: record_cron_log(task_id, "failed" if is_error else "success", result_text, "", duration_ms)
+                )
 
-        # One-shot delay task deactivates after single execution
-        if task.get('task_type') == 'delay':
-            await asyncio.get_running_loop().run_in_executor(
-                None, lambda: update_cron_task_status(task_id, False)
-            )
-
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: update_cron_task_run(task_id, now_ts, next_run)
-        )
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: record_cron_log(task_id, "failed" if is_error else "success", result_text, "", duration_ms)
-        )
-
-        # 4. Send Execution Result Card
-        result_card = CardBuilder.build_cron_execution_card(task, result_text, is_error=is_error, duration_ms=duration_ms)
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: send_card_to_chat_sdk(chat_id, result_card)
-        )
-
-        self._running_tasks.remove(task_id)
+                # 4. Send Execution Result Card（codex 静默执行不自行发卡，保持原有推送行为）
+                result_card = CardBuilder.build_cron_execution_card(task, result_text, is_error=is_error, duration_ms=duration_ms)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: send_card_to_chat_sdk(chat_id, result_card)
+                )
+            except Exception as ex:
+                log.error(f"[CronEngine] Error in finally state update: {ex}")
+            finally:
+                self._running_tasks.discard(task_id)
 
 
 # Global singleton instance

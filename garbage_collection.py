@@ -1,6 +1,7 @@
 import os
 import time
 import asyncio
+from config import BASE_DIR
 from logger import log
 
 async def garbage_collector(interval_seconds=3600, max_age_seconds=86400):
@@ -9,7 +10,7 @@ async def garbage_collector(interval_seconds=3600, max_age_seconds=86400):
     :param interval_seconds: How often to run the cleanup (default 1 hour).
     :param max_age_seconds: Files older than this will be deleted (default 24 hours).
     """
-    directories_to_clean = ["downloads", "logs"]
+    directories_to_clean = [os.path.join(BASE_DIR, "downloads"), os.path.join(BASE_DIR, "logs")]
     
     while True:
         try:
@@ -31,7 +32,7 @@ async def garbage_collector(interval_seconds=3600, max_age_seconds=86400):
                                     log.error(f"[GC] Error deleting {filepath}: {e}")
             
             # Clean legacy files in the root directory (for backward compatibility)
-            root_dir = "."
+            root_dir = BASE_DIR
             for filename in os.listdir(root_dir):
                 if filename.startswith("img_") or filename.startswith("file_v3_") or filename.startswith("codex_log_") or filename.startswith("audio_") or filename.startswith("video_"):
                     filepath = os.path.join(root_dir, filename)

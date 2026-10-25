@@ -3,8 +3,11 @@ import os
 import re
 
 import app_state
+from config import BASE_DIR
 from card_builder import CardBuilder
 from lark_client import send_interactive_card_sdk, download_message_resource_sdk
+
+DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
 
 
 async def _process_image_message(loop, message_id, content_json, content_raw):
@@ -19,8 +22,8 @@ async def _process_image_message(loop, message_id, content_json, content_raw):
     
     bot_reply_msg_id = None
     if image_key:
-        os.makedirs("downloads", exist_ok=True)
-        output_filename = f"downloads/img_{image_key}.jpg"
+        os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+        output_filename = os.path.join(DOWNLOADS_DIR, f"img_{image_key}.jpg")
         
         dl_card = CardBuilder.build_download_indicator(os.path.basename(output_filename), "图片")
         bot_reply_msg_id = await loop.run_in_executor(None, lambda: send_interactive_card_sdk(message_id, dl_card))
@@ -51,8 +54,8 @@ async def _process_post_message(loop, message_id, content_json):
     
     if image_keys:
         image_key = image_keys[0]
-        os.makedirs("downloads", exist_ok=True)
-        output_filename = f"downloads/img_{image_key}.jpg"
+        os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+        output_filename = os.path.join(DOWNLOADS_DIR, f"img_{image_key}.jpg")
         
         dl_card = CardBuilder.build_download_indicator("图片内容")
         bot_reply_msg_id = await loop.run_in_executor(None, lambda: send_interactive_card_sdk(message_id, dl_card))
@@ -99,8 +102,8 @@ async def _process_file_audio_media_message(loop, message_id, message_type, cont
         # Purify file_name to prevent directory traversal
         file_name = os.path.basename(file_name)
         
-        os.makedirs("downloads", exist_ok=True)
-        output_filename = os.path.join("downloads", file_name)
+        os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+        output_filename = os.path.join(DOWNLOADS_DIR, file_name)
         dl_card = CardBuilder.build_download_indicator(file_name, message_type)
         bot_reply_msg_id = await loop.run_in_executor(None, lambda: send_interactive_card_sdk(message_id, dl_card))
 
@@ -128,7 +131,7 @@ async def _process_batch_media_message(loop, message_id, content_json):
     dl_card = CardBuilder.build_download_indicator(f"合并批处理 ({len(items)} 个文件)", "多媒体组")
     bot_reply_msg_id = await loop.run_in_executor(None, lambda: send_interactive_card_sdk(message_id, dl_card))
     
-    os.makedirs("downloads", exist_ok=True)
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
     
     for idx, item in enumerate(items):
         m_type = item["message_type"]
@@ -150,7 +153,7 @@ async def _process_batch_media_message(loop, message_id, content_json):
             file_name = os.path.basename(file_name)
             
         if file_key:
-            output_path = os.path.abspath(os.path.join("downloads", file_name))
+            output_path = os.path.abspath(os.path.join(DOWNLOADS_DIR, file_name))
             success = await loop.run_in_executor(None, lambda: download_message_resource_sdk(item["message_id"], file_key, "image" if m_type == "image" else "file", output_path))
             if success:
                 media_hints.append(f"{idx+1}. 多模态 {m_type.upper()} 文件路径: `{output_path}`")
