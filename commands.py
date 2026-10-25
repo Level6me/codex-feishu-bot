@@ -136,7 +136,7 @@ def get_system_status_card_data():
             cpu = bot_info['monit']['cpu']
             mem_mb = round(bot_info['monit']['memory'] / (1024 * 1024), 1)
         else:
-            return 0, 0, "Unknown", "offline", 0, "No process found"
+            return 0, 0, "Unknown", "offline", 0, "No process found", "未知", {}
             
         import time
         now = time.time() * 1000
