@@ -2,7 +2,7 @@
 
 import asyncio
 from plugin_base import BasePlugin
-from card_builder import CardBuilder
+from cards import CardBuilder
 from database import save_session_async
 from lark_client import patch_interactive_card_sdk
 from logger import log

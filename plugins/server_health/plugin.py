@@ -5,7 +5,7 @@ import time
 import subprocess
 from datetime import datetime
 from plugin_base import BasePlugin
-from card_builder import CardBuilder
+from cards import CardBuilder
 from logger import log
 
 

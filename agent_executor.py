@@ -174,11 +174,43 @@ def _event_action(event):
 
 
 def _agent_text(event):
-    item = event.get("item") or event
-    if item.get("type") not in ("agent_message", "message"):
+    """Extract assistant text from the JSONL event variants emitted by Codex CLI.
+
+    Depending on the CLI version, message content may be a plain string, a list
+    of typed text blocks, or only be exposed as ``last_agent_message`` on the
+    completed-turn event.
+    """
+    def text_from(value):
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return "".join(filter(None, (text_from(part) for part in value)))
+        if isinstance(value, dict):
+            # Ignore non-text blocks (images, refusals metadata, etc.) while
+            # allowing both the CLI's output_text and generic text block names.
+            kind = value.get("type")
+            if kind and kind not in ("text", "output_text", "input_text"):
+                return ""
+            for key in ("text", "content"):
+                extracted = text_from(value.get(key))
+                if extracted:
+                    return extracted
         return ""
-    text = item.get("text") or item.get("content") or ""
-    return text if isinstance(text, str) else ""
+
+    item = event.get("item") or event
+    if isinstance(item, dict) and item.get("type") in ("agent_message", "message"):
+        message = text_from(item.get("text")) or text_from(item.get("content"))
+        if message:
+            return message
+
+    # Some CLI versions put the final response on turn.completed instead of
+    # emitting it as an agent_message item.
+    if event.get("type") == "turn.completed":
+        for key in ("last_agent_message", "final_response", "output"):
+            message = text_from(event.get(key))
+            if message:
+                return message
+    return ""
 
 
 async def execute_codex(
@@ -274,6 +306,7 @@ async def execute_codex(
     last_stdout_size = 0
     stream_text = ""
     last_streamed_length = 0
+    event_types = set()
     started = time.time()
     next_patch_time = 0.0
 
@@ -287,6 +320,7 @@ async def execute_codex(
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
             event_type = event.get("type", "")
+            event_types.add(event_type or "<missing>")
             if event_type == "error" or event.get("error"):
                 err_msg = event.get("message") or event.get("error", {}).get("message") or str(event)
                 stdout_errors.append(err_msg)
@@ -407,6 +441,11 @@ async def execute_codex(
         running_processes.pop(chat_id, None)
 
     reply = "\n\n".join(part.strip() for part in replies if part.strip()).strip()
+    if not reply:
+        log.warning(
+            "Codex completed without a parsed assistant message; "
+            f"event types observed for chat {chat_id}: {sorted(set(event_types))}"
+        )
     failed = process.returncode != 0 or not reply
 
     # 会话线程损坏（工具调用输出丢失）时，清空会话并新建线程重试一次，避免每次消息都失败

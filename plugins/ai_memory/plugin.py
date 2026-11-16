@@ -2,7 +2,7 @@
 
 import asyncio
 from plugin_base import BasePlugin
-from card_builder import CardBuilder
+from cards import CardBuilder
 from database import get_profile_async
 from logger import log
 

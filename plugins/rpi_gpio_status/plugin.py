@@ -41,7 +41,12 @@ except Exception:
 class RpiGpioStatusPlugin(BasePlugin):
 
     def initialize(self):
-        cfg = self.get_config()
+        cfg = self.get_config() or {}
+        self.enabled = cfg.get("enabled", False)
+        if not self.enabled:
+            log.info(f"[Plugin:{self.plugin_id}] Disabled via config.json (Physical GPIO mode inactive).")
+            return
+
         self.pins = cfg.get("gpio_pins", {"red": 22, "yellow": 27, "green": 17})
         self.led_objects = {}
         self.current_state = "off"
@@ -190,15 +195,21 @@ class RpiGpioStatusPlugin(BasePlugin):
 
     async def on_before_ai(self, user_text: str, chat_id: str, session_data: dict) -> tuple[str, dict]:
         """Hook: 开始 AI 思考 -> 规则 1a 常亮黄灯"""
+        if not getattr(self, "enabled", False):
+            return user_text, session_data
         self.set_state_thinking()
         return user_text, session_data
 
     async def on_tool_call(self, tool_name: str, tool_args: dict):
         """Hook: 调用/使用工具 -> 规则 1b 呼吸黄灯"""
+        if not getattr(self, "enabled", False):
+            return
         self.set_state_breathing_yellow()
 
     def on_service_restarting(self):
         """Hook: feishu-bot 重启服务时 -> 规则 1c 闪烁黄灯"""
+        if not getattr(self, "enabled", False):
+            return
         self.turn_all_off()
         self.current_state = "restarting_yellow_blink"
 
@@ -214,7 +225,18 @@ class RpiGpioStatusPlugin(BasePlugin):
 
     async def on_after_ai(self, ai_response_text: str, chat_id: str, session_data: dict) -> str:
         """Hook: AI 任务响应分析 -> 规则 2 / 规则 3"""
-        if any(err_kw in ai_response_text.lower() for err_kw in ["⚠️", "❌", "错误", "失败", "超时", "已被终止", "stopped"]):
+        if not getattr(self, "enabled", False):
+            return ai_response_text
+        # 避让正文中普通的"错误/失败"词汇解释，只有真正发生任务失败、超时、卡死强杀时才亮红灯
+        explicit_error_markers = [
+            "⚠️ 任务已检测到卡死",
+            "⚠️ 任务已被终止",
+            "❌ 执行失败",
+            "❌ 运行超时",
+            "⚠️ 任务超时",
+            "❌ 任务出错"
+        ]
+        if any(marker in ai_response_text for marker in explicit_error_markers):
             self.set_state_error()
         else:
             self.set_state_success()
@@ -301,6 +323,8 @@ class RpiGpioStatusPlugin(BasePlugin):
         return card
 
     async def on_command(self, command: str, args: str, chat_id: str, message_id: str, session_data: dict) -> bool:
+        if not getattr(self, "enabled", False):
+            return False
         cmd_lower = command.lower()
         if cmd_lower in ["/stop", "/cancel"]:
             # 规则 2: 被/stop强制停止 常亮红灯
@@ -328,6 +352,8 @@ class RpiGpioStatusPlugin(BasePlugin):
         return False
 
     async def on_card_action(self, action: str, value: dict, chat_id: str, card_message_id: str) -> bool:
+        if not getattr(self, "enabled", False):
+            return False
         act = action or (value.get("action") if isinstance(value, dict) else "")
         if act == "set_rpi_light":
             st = value.get("state", "") if isinstance(value, dict) else ""

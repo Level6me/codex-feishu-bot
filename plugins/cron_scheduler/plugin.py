@@ -2,7 +2,7 @@
 
 import asyncio
 from plugin_base import BasePlugin
-from card_builder import CardBuilder
+from cards import CardBuilder
 from database import get_all_cron_tasks, update_cron_task_status, delete_cron_task, get_cron_task
 from lark_client import patch_interactive_card_sdk, send_reply_sdk
 from logger import log
